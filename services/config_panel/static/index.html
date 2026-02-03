@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AIFeedTracker 配置面板</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=Space+Grotesk:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --panel-soft: #1f2937;
+        --accent: #22c55e;
+        --accent-2: #38bdf8;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --danger: #f97316;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Space Grotesk", sans-serif;
+        background: radial-gradient(circle at 20% 20%, #1e293b, #0b1120 60%),
+          linear-gradient(120deg, #0f172a, #111827);
+        color: var(--text);
+        min-height: 100vh;
+      }
+
+      header {
+        padding: 32px 24px 12px;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+
+      header h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        letter-spacing: 0.5px;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 12px 24px 48px;
+        display: grid;
+        gap: 20px;
+      }
+
+      .card {
+        background: linear-gradient(160deg, #0f172a, #111827 60%);
+        border: 1px solid #1f2937;
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.35);
+      }
+
+      .card h2 {
+        margin: 0 0 12px;
+        font-size: 18px;
+      }
+
+      .grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .grid.two {
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+
+      label {
+        font-size: 13px;
+        color: var(--muted);
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid #334155;
+        background: #0b1220;
+        color: var(--text);
+      }
+
+      textarea {
+        min-height: 180px;
+        font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+      }
+
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        border: none;
+        background: var(--accent);
+        color: #052e1a;
+        padding: 10px 18px;
+        border-radius: 999px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        background: var(--panel-soft);
+        color: var(--text);
+      }
+
+      .status {
+        margin-top: 10px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .status.ok {
+        color: var(--accent-2);
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>AIFeedTracker 配置面板</h1>
+      <p>集中管理 .env 与监控博主列表。无 Token 默认仅限本机访问。</p>
+    </header>
+    <main>
+      <section class="card">
+        <h2>访问授权</h2>
+        <div class="grid two">
+          <div>
+            <label for="admin-token">X-Admin-Token</label>
+            <input id="admin-token" type="password" placeholder="可选，填入面板 Token" />
+          </div>
+          <div>
+            <label>快捷操作</label>
+            <div class="actions">
+              <button class="secondary" id="reload-config">刷新配置</button>
+              <button class="secondary" id="reload-creators">刷新博主</button>
+            </div>
+          </div>
+        </div>
+        <div class="status" id="auth-status">未连接</div>
+      </section>
+      <section class="card">
+        <h2>基础配置</h2>
+        <div class="grid two">
+          <div>
+            <label>飞书 App ID</label>
+            <input data-env-key="app_id" placeholder="app_id" />
+          </div>
+          <div>
+            <label>飞书 App Secret</label>
+            <input data-env-key="app_secret" type="password" placeholder="app_secret" />
+          </div>
+          <div>
+            <label>飞书模板 ID</label>
+            <input data-env-key="FEISHU_TEMPLATE_ID" placeholder="FEISHU_TEMPLATE_ID" />
+          </div>
+          <div>
+            <label>飞书模板版本</label>
+            <input data-env-key="FEISHU_TEMPLATE_VERSION" placeholder="FEISHU_TEMPLATE_VERSION" />
+          </div>
+          <div>
+            <label>飞书接收人 Open ID</label>
+            <input data-env-key="FEISHU_USER_OPEN_ID" placeholder="FEISHU_USER_OPEN_ID" />
+          </div>
+          <div>
+            <label>AI 服务</label>
+            <input data-env-key="AI_SERVICE" placeholder="deepseek / zhipu / qwen" />
+          </div>
+          <div>
+            <label>AI API Key</label>
+            <input data-env-key="AI_API_KEY" type="password" placeholder="AI_API_KEY" />
+          </div>
+          <div>
+            <label>AI Base URL</label>
+            <input data-env-key="AI_BASE_URL" placeholder="AI_BASE_URL" />
+          </div>
+          <div>
+            <label>AI Model</label>
+            <input data-env-key="AI_MODEL" placeholder="AI_MODEL" />
+          </div>
+          <div>
+            <label>User-Agent</label>
+            <input data-env-key="USER_AGENT" placeholder="USER_AGENT" />
+          </div>
+        </div>
+        <div class="actions">
+          <button id="save-config">保存配置</button>
+        </div>
+        <div class="status" id="config-status"></div>
+      </section>
+
+      <section class="card">
+        <h2>B 站 Cookie</h2>
+        <div class="grid two">
+          <div>
+            <label>SESSDATA</label>
+            <input data-env-key="SESSDATA" type="password" placeholder="SESSDATA" />
+          </div>
+          <div>
+            <label>bili_jct</label>
+            <input data-env-key="bili_jct" type="password" placeholder="bili_jct" />
+          </div>
+          <div>
+            <label>buvid3</label>
+            <input data-env-key="buvid3" type="password" placeholder="buvid3" />
+          </div>
+          <div>
+            <label>DedeUserID</label>
+            <input data-env-key="DedeUserID" type="password" placeholder="DedeUserID" />
+          </div>
+          <div>
+            <label>DedeUserID__ckMd5</label>
+            <input data-env-key="DedeUserID__ckMd5" type="password" placeholder="DedeUserID__ckMd5" />
+          </div>
+          <div>
+            <label>refresh_token</label>
+            <input data-env-key="refresh_token" type="password" placeholder="refresh_token" />
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>面板设置</h2>
+        <div class="grid two">
+          <div>
+            <label>PANEL_HOST</label>
+            <input data-env-key="PANEL_HOST" placeholder="127.0.0.1" />
+          </div>
+          <div>
+            <label>PANEL_PORT</label>
+            <input data-env-key="PANEL_PORT" placeholder="8765" />
+          </div>
+          <div>
+            <label>PANEL_ADMIN_TOKEN</label>
+            <input data-env-key="PANEL_ADMIN_TOKEN" type="password" placeholder="PANEL_ADMIN_TOKEN" />
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>监控博主列表</h2>
+        <label for="creators">JSON 数组</label>
+        <textarea id="creators" spellcheck="false"></textarea>
+        <div class="actions">
+          <button id="save-creators">保存博主列表</button>
+        </div>
+        <div class="status" id="creators-status"></div>
+      </section>
+    </main>
+
+    <script>
+      const adminToken = document.getElementById("admin-token");
+      const authStatus = document.getElementById("auth-status");
+      const configStatus = document.getElementById("config-status");
+      const creatorsStatus = document.getElementById("creators-status");
+      const creatorsField = document.getElementById("creators");
+
+      const envInputs = Array.from(document.querySelectorAll("[data-env-key]"));
+
+      const headers = () => {
+        const token = adminToken.value.trim();
+        return token ? { "X-Admin-Token": token } : {};
+      };
+
+      const setStatus = (el, message, type) => {
+        el.textContent = message;
+        el.className = `status ${type || ""}`.trim();
+      };
+
+      const loadConfig = async () => {
+        try {
+          const res = await fetch("/api/config", { headers: headers() });
+          if (!res.ok) {
+            throw new Error(`配置加载失败：${res.status}`);
+          }
+          const data = await res.json();
+          envInputs.forEach((input) => {
+            const key = input.dataset.envKey;
+            if (key in data && data[key] !== null) {
+              input.value = data[key];
+            }
+          });
+          setStatus(configStatus, "配置已加载", "ok");
+          setStatus(authStatus, "已连接", "ok");
+        } catch (err) {
+          setStatus(configStatus, err.message, "error");
+          setStatus(authStatus, "未连接", "error");
+        }
+      };
+
+      const saveConfig = async () => {
+        const payload = {};
+        envInputs.forEach((input) => {
+          payload[input.dataset.envKey] = input.value.trim();
+        });
+        try {
+          const res = await fetch("/api/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...headers() },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            throw new Error(`配置保存失败：${res.status}`);
+          }
+          setStatus(configStatus, "配置已保存", "ok");
+        } catch (err) {
+          setStatus(configStatus, err.message, "error");
+        }
+      };
+
+      const loadCreators = async () => {
+        try {
+          const res = await fetch("/api/creators", { headers: headers() });
+          if (!res.ok) {
+            throw new Error(`博主列表加载失败：${res.status}`);
+          }
+          const data = await res.json();
+          creatorsField.value = JSON.stringify(data, null, 2);
+          setStatus(creatorsStatus, "博主列表已加载", "ok");
+        } catch (err) {
+          setStatus(creatorsStatus, err.message, "error");
+        }
+      };
+
+      const saveCreators = async () => {
+        try {
+          const payload = JSON.parse(creatorsField.value || "[]");
+          const res = await fetch("/api/creators", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...headers() },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            throw new Error(`博主列表保存失败：${res.status}`);
+          }
+          setStatus(creatorsStatus, "博主列表已保存", "ok");
+        } catch (err) {
+          setStatus(creatorsStatus, err.message, "error");
+        }
+      };
+
+      document.getElementById("reload-config").addEventListener("click", loadConfig);
+      document.getElementById("reload-creators").addEventListener("click", loadCreators);
+      document.getElementById("save-config").addEventListener("click", saveConfig);
+      document.getElementById("save-creators").addEventListener("click", saveCreators);
+
+      loadConfig();
+      loadCreators();
+    </script>
+  </body>
+</html>

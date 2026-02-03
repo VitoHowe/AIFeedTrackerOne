@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  ai-feed-tracker:
+    build: .
+    container_name: ai-feed-tracker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - PANEL_HOST=0.0.0.0
+      - TZ=Asia/Shanghai
+    ports:
+      - "${PANEL_PORT:-8765}:${PANEL_PORT:-8765}"
+    volumes:
+      - ./data:/app/data

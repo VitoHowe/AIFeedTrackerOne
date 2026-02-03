@@ -1,0 +1,20 @@
+[project]
+name = "ai-video-robot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "aiofiles>=24.1.0",
+    "aiohttp>=3.12.15",
+    "aiologger>=0.7.0",
+    "bilibili-api-python>=17.4.0",
+    "brotli>=1.1.0",
+    "fastapi>=0.111.0",
+    "lark-oapi>=1.4.23",
+    "openai>=2.3.0",
+    "playwright>=1.55.0",
+    "python-dotenv>=1.1.1",
+    "qrcode>=8.2",
+    "uvicorn[standard]>=0.30.0",
+]

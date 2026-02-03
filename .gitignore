@@ -1,0 +1,63 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+venv/
+env/
+
+# Playwright
+.playwright-mcp/
+browser_data/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# Internal development files (keep locally, don't push)
+.github/
+.cursor/
+.codex/
+.serena/
+
+# Test files (root level only, keep tests/ directory)
+/test_*.py
+/debug_*.py
+
+# Master-branch specific test files (not in open-source)
+tests/test_login_auto.py
+tests/test_login_stability.py
+
+# Log files
+log/
+*.log
+
+# Data files (contain runtime state and credentials)
+data/
+*.json
+# 但允许示例文件
+!data/*.example
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+backup/
+*.bak
+*.backup
