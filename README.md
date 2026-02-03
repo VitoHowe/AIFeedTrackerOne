@@ -201,6 +201,13 @@ docker compose up -d --build
 
 面板访问：`http://<服务器IP>:${PANEL_PORT}`（建议配置 `PANEL_ADMIN_TOKEN`）
 
+**面板安全说明**
+
+- 未设置 `PANEL_ADMIN_TOKEN` 时，仅允许本机访问（`127.0.0.1` / `::1`）
+- 若设置 `PANEL_HOST=0.0.0.0`，强烈建议配置 `PANEL_ADMIN_TOKEN`
+- Token 传递方式：HTTP Header `X-Admin-Token` 或查询参数 `?token=...`
+- 面板修改 `.env` 后需重启服务生效
+
 **Docker Run**
 
 ```bash
