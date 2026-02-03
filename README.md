@@ -206,7 +206,8 @@ docker compose up -d --build
 - 未设置 `PANEL_ADMIN_TOKEN` 时，仅允许本机访问（`127.0.0.1` / `::1`）
 - 若设置 `PANEL_HOST=0.0.0.0`，强烈建议配置 `PANEL_ADMIN_TOKEN`
 - Token 传递方式：HTTP Header `X-Admin-Token` 或查询参数 `?token=...`
-- 面板修改 `.env` 后需重启服务生效
+- 面板保存配置后会触发服务热更新（监控/AI/飞书配置即时生效）
+- 端口映射不在面板中修改，请在 `docker-compose.yml` 调整后重启容器
 
 **Docker Run**
 

@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -35,7 +36,6 @@ ALLOWED_ENV_KEYS = [
     "AI_MODEL",
     "USER_AGENT",
     "PANEL_HOST",
-    "PANEL_PORT",
     "PANEL_ADMIN_TOKEN",
 ]
 
@@ -57,7 +57,15 @@ def require_admin(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
-def create_app() -> FastAPI:
+async def _notify_change(on_change: Optional[Callable[[], object]]) -> None:
+    if not on_change:
+        return
+    result = on_change()
+    if inspect.isawaitable(result):
+        await result
+
+
+def create_app(on_change: Optional[Callable[[], object]] = None) -> FastAPI:
     app = FastAPI(title="AIFeedTracker Config Panel")
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -77,6 +85,7 @@ def create_app() -> FastAPI:
     ) -> Dict[str, Optional[str]]:
         updates = {k: v for k, v in payload.items() if k in ALLOWED_ENV_KEYS}
         update_env_values(updates)
+        await _notify_change(on_change)
         return read_env_values(ALLOWED_ENV_KEYS)
 
     @app.get("/api/creators")
@@ -89,6 +98,7 @@ def create_app() -> FastAPI:
         _: None = Depends(require_admin),
     ) -> Dict[str, str]:
         write_creators(creators)
+        await _notify_change(on_change)
         return {"status": "ok"}
 
     return app

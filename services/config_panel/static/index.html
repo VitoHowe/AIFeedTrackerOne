@@ -143,7 +143,7 @@
   <body>
     <header>
       <h1>AIFeedTracker 配置面板</h1>
-      <p>集中管理 .env 与监控博主列表。无 Token 默认仅限本机访问。</p>
+      <p>集中管理 .env 与监控博主列表。保存后自动热更新，端口映射需手动处理。</p>
     </header>
     <main>
       <section class="card">
@@ -251,14 +251,11 @@
             <input data-env-key="PANEL_HOST" placeholder="127.0.0.1" />
           </div>
           <div>
-            <label>PANEL_PORT</label>
-            <input data-env-key="PANEL_PORT" placeholder="8765" />
-          </div>
-          <div>
             <label>PANEL_ADMIN_TOKEN</label>
             <input data-env-key="PANEL_ADMIN_TOKEN" type="password" placeholder="PANEL_ADMIN_TOKEN" />
           </div>
         </div>
+        <div class="status">端口映射请在 docker-compose.yml 中配置</div>
       </section>
 
       <section class="card">

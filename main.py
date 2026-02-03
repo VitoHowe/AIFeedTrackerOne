@@ -6,14 +6,16 @@ AI视频机器人主程序
 """
 
 import asyncio
+import logging
 import sys
 from pathlib import Path
+from typing import Optional
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from config import PANEL_CONFIG, get_config_status
+from config import PANEL_CONFIG, get_config_status, reload_config
 
 # 导入核心模块
 from core import configure_logging
@@ -23,7 +25,20 @@ from services import FeishuBot, MonitorService
 from services.ai_summary import AISummaryService
 
 
-async def start_config_panel():
+async def _cancel_task(task: Optional[asyncio.Task], name: str) -> None:
+    if not task or task.done():
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.warning(f"取消任务 {name} 失败: {e}")
+
+
+async def start_config_panel(on_change=None):
     """启动配置面板服务"""
     from services.config_panel import create_app
 
@@ -35,7 +50,7 @@ async def start_config_panel():
         raise RuntimeError("缺少 uvicorn 依赖，请先安装后再启动配置面板")
 
     config = uvicorn.Config(
-        create_app(),
+        create_app(on_change=on_change),
         host=PANEL_CONFIG.get("host", "127.0.0.1"),
         port=PANEL_CONFIG.get("port", 8765),
         log_level="info",
@@ -183,6 +198,9 @@ class AIVideoBot:
             # 启动监控
             await monitor_service.start_monitoring(creators, once=once)
 
+        except asyncio.CancelledError:
+            self.logger.info("监控任务已取消")
+            raise
         except Exception as e:
             self.logger.error(f"动态监控异常: {e}")
             # 发送监控异常通知
@@ -225,6 +243,8 @@ async def main():
 
     # 创建机器人实例
     bot = AIVideoBot()
+    panel_task: Optional[asyncio.Task] = None
+    monitor_task: Optional[asyncio.Task] = None
 
     try:
         # 如果指定了--reset，清空状态文件
@@ -263,38 +283,48 @@ async def main():
         elif args.mode == "service":
             # 服务模式：持续运行，异常时重启
             print("启动服务模式...")
-            panel_task = asyncio.create_task(start_config_panel())
+            reload_event = asyncio.Event()
+
+            def trigger_reload():
+                reload_event.set()
+
+            panel_task = asyncio.create_task(start_config_panel(trigger_reload))
             bot.logger.info(
                 f"配置面板启动: http://{PANEL_CONFIG.get('host', '127.0.0.1')}:{PANEL_CONFIG.get('port', 8765)}"
             )
+            monitor_task = asyncio.create_task(bot.start_monitoring(once=False))
+
+            async def restart_services(reason: str) -> None:
+                nonlocal bot, monitor_task, panel_task
+                bot.logger.info(f"配置变更触发热更新: {reason}")
+                reload_config()
+                await _cancel_task(monitor_task, "monitor")
+                await _cancel_task(panel_task, "panel")
+                bot = AIVideoBot()
+                panel_task = asyncio.create_task(start_config_panel(trigger_reload))
+                bot.logger.info(
+                    f"配置面板启动: http://{PANEL_CONFIG.get('host', '127.0.0.1')}:{PANEL_CONFIG.get('port', 8765)}"
+                )
+                monitor_task = asyncio.create_task(bot.start_monitoring(once=False))
+
             while True:
-                try:
-                    await bot.start_monitoring(once=False)
-                except KeyboardInterrupt:
-                    print("\n收到停止信号，退出服务")
-                    # 发送正常停止通知
-                    try:
-                        await bot.feishu_bot.send_system_notification(
-                            bot.feishu_bot.LEVEL_INFO,
-                            "机器人正常停止",
-                            "收到停止信号，机器人正在安全关闭",
-                        )
-                    except Exception:
-                        pass
-                    break
-                except Exception as e:
-                    print(f"监控循环异常: {e}")
-                    # 发送异常通知
-                    try:
-                        await bot.feishu_bot.send_system_notification(
-                            bot.feishu_bot.LEVEL_ERROR,
-                            "服务循环异常",
-                            f"服务模式遇到异常，将在30秒后重试\n\n**错误信息:**\n```\n{str(e)}\n```",
-                        )
-                    except Exception:
-                        pass
-                    print("等待30秒后重试...")
+                done, _ = await asyncio.wait(
+                    [monitor_task, reload_event.wait()],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if reload_event.is_set():
+                    reload_event.clear()
+                    await restart_services("config-change")
+                    continue
+                if monitor_task in done:
+                    if monitor_task.cancelled():
+                        break
+                    exc = monitor_task.exception()
+                    if exc:
+                        bot.logger.error(f"监控循环异常: {exc}")
+                    bot.logger.info("等待30秒后重试...")
                     await asyncio.sleep(30)
+                    await restart_services("monitor-restart")
         else:
             # 监控模式
             print("启动动态监控模式...")
@@ -326,12 +356,8 @@ async def main():
         # 只在测试模式或一次性检查模式下立即清理资源
         if args.mode == "test" or args.once:
             await bot.cleanup()
-        if panel_task and not panel_task.done():
-            panel_task.cancel()
-            try:
-                await panel_task
-            except asyncio.CancelledError:
-                pass
+        await _cancel_task(monitor_task, "monitor")
+        await _cancel_task(panel_task, "panel")
 
 
 if __name__ == "__main__":
