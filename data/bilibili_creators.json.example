@@ -1,0 +1,22 @@
+[
+  {
+    "uid": 11473291,
+    "name": "示例博主1",
+    "platform": "bilibili",
+    "enable_comments": false,
+    "comment_keywords": [
+      "关键词1",
+      "关键词2"
+    ],
+    "check_interval": 300
+  },
+  {
+    "uid": 550494308,
+    "name": "示例博主2",
+    "platform": "bilibili",
+    "enable_comments": false,
+    "comment_keywords": [],
+    "check_interval": 600
+  }
+]
+
