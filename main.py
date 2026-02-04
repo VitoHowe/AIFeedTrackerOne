@@ -15,7 +15,7 @@ from typing import Optional
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from config import PANEL_CONFIG, get_config_status, reload_config
+from config import PANEL_CONFIG, build_bilibili_cookie, get_config_status, reload_config
 
 # 导入核心模块
 from core import configure_logging
@@ -171,8 +171,9 @@ class AIVideoBot:
             self.logger.info("启动动态监控...")
 
             # 创建监控服务
+            cookie = build_bilibili_cookie()
             monitor_service = MonitorService(
-                feishu_bot=self.feishu_bot, summarizer=self.ai_service
+                feishu_bot=self.feishu_bot, summarizer=self.ai_service, cookie=cookie
             )
 
             # 加载创作者列表

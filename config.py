@@ -48,6 +48,14 @@ def _load_env() -> None:
         load_dotenv(env_file, override=True)
 
 
+def _strip_wrapping_quotes(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return value
+    if len(value) >= 2 and ((value[0] == '"' and value[-1] == '"') or (value[0] == "'" and value[-1] == "'")):
+        return value[1:-1]
+    return value
+
+
 def reload_config() -> None:
     """热更新配置（就地更新配置字典）"""
     _load_env()
@@ -86,9 +94,10 @@ def reload_config() -> None:
     )
 
     global USER_AGENT
-    USER_AGENT = (
-        os.getenv("USER_AGENT")
-        or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    env_ua = _strip_wrapping_quotes(os.getenv("USER_AGENT"))
+    USER_AGENT = env_ua or (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
     )
 
     PANEL_CONFIG.clear()

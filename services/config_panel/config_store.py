@@ -48,12 +48,22 @@ def read_env_values(keys: Iterable[str], env_path: Path = ENV_PATH) -> Dict[str,
     return values
 
 
+def _quote_env_value(value: str) -> str:
+    if value == "":
+        return value
+    needs_quotes = any(ch.isspace() for ch in value) or "#" in value
+    if not needs_quotes:
+        return value
+    escaped = value.replace("\"", "\\\"")
+    return f"\"{escaped}\""
+
+
 def _normalize_env_updates(updates: Dict[str, Optional[str]]) -> Dict[str, str]:
     normalized: Dict[str, str] = {}
     for key, value in updates.items():
         if value is None:
             continue
-        normalized[key] = str(value)
+        normalized[key] = _quote_env_value(str(value))
     return normalized
 
 
