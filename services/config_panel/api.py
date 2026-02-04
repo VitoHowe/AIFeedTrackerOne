@@ -48,13 +48,21 @@ def _is_local_request(request: Request) -> bool:
 
 def require_admin(request: Request) -> None:
     admin_token = PANEL_CONFIG.get("admin_token")
+    if not admin_token:
+        return
+    provided = request.headers.get("X-Admin-Token") or request.query_params.get("token")
+    if provided != admin_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def require_read(request: Request) -> None:
+    admin_token = PANEL_CONFIG.get("admin_token")
     if admin_token:
         provided = request.headers.get("X-Admin-Token") or request.query_params.get("token")
         if provided != admin_token:
             raise HTTPException(status_code=401, detail="Unauthorized")
         return
-    if not _is_local_request(request):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    return
 
 
 async def _notify_change(on_change: Optional[Callable[[], object]]) -> None:
@@ -75,7 +83,7 @@ def create_app(on_change: Optional[Callable[[], object]] = None) -> FastAPI:
             return FileResponse(STATIC_DIR / "index.html")
 
     @app.get("/api/config")
-    async def get_config(_: None = Depends(require_admin)) -> Dict[str, Optional[str]]:
+    async def get_config(_: None = Depends(require_read)) -> Dict[str, Optional[str]]:
         return read_env_values(ALLOWED_ENV_KEYS)
 
     @app.post("/api/config")
@@ -89,7 +97,7 @@ def create_app(on_change: Optional[Callable[[], object]] = None) -> FastAPI:
         return read_env_values(ALLOWED_ENV_KEYS)
 
     @app.get("/api/creators")
-    async def get_creators(_: None = Depends(require_admin)) -> List[dict]:
+    async def get_creators(_: None = Depends(require_read)) -> List[dict]:
         return read_creators()
 
     @app.post("/api/creators")
