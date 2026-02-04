@@ -308,14 +308,18 @@ async def main():
                 monitor_task = asyncio.create_task(bot.start_monitoring(once=False))
 
             while True:
+                reload_task = asyncio.create_task(reload_event.wait())
                 done, _ = await asyncio.wait(
-                    [monitor_task, reload_event.wait()],
+                    [monitor_task, reload_task],
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 if reload_event.is_set():
                     reload_event.clear()
+                    await _cancel_task(reload_task, "reload-event")
                     await restart_services("config-change")
                     continue
+                if reload_task in done:
+                    await _cancel_task(reload_task, "reload-event")
                 if monitor_task in done:
                     if monitor_task.cancelled():
                         break
