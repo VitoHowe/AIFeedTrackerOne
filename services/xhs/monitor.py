@@ -288,11 +288,21 @@ class XHSMonitorService:
                     if resp.status != 200:
                         continue
                     content = await resp.read()
+                    content_type = (resp.headers.get("Content-Type") or "").lower()
+                mime = "image/jpeg"
+                if "image/webp" in content_type or "webp" in url:
+                    mime = "image/webp"
+                elif "image/png" in content_type or url.lower().endswith(".png"):
+                    mime = "image/png"
+                elif "image/gif" in content_type or url.lower().endswith(".gif"):
+                    mime = "image/gif"
                 filename = os.path.join(base_dir, f"{idx}.jpg")
                 async with aiofiles.open(filename, "wb") as f:
                     await f.write(content)
                 b64 = base64.b64encode(content).decode("utf-8")
-                saved.append({"path": filename, "base64": b64, "url": url})
+                saved.append(
+                    {"path": filename, "base64": b64, "url": url, "mime": mime}
+                )
             except Exception as exc:
                 self.logger.warning("下载图片失败: %s, err=%s", url, exc)
         return saved
@@ -398,17 +408,36 @@ class XHSMonitorService:
             return fallback
         return text
 
+    @staticmethod
+    def _is_preview_url(url: str) -> bool:
+        url = url or ""
+        markers = (
+            "notes_pre_post",
+            "nc_n_webp_prv",
+            "nc_n_webp_mw",
+            "prv_",
+            "mw_1",
+        )
+        return any(marker in url for marker in markers)
+
     async def _summarize_images(
         self, images: List[Dict[str, str]], text_hint: str = ""
     ) -> Optional[str]:
         if not self.summarizer or not images:
             return None
-        payloads = [{"mime": "image/jpeg", "base64": img["base64"]} for img in images]
+        payloads = [
+            {"mime": img.get("mime", "image/jpeg"), "base64": img["base64"]}
+            for img in images
+            if img.get("base64")
+        ]
         prompt = self.prompt
         if text_hint:
             prompt = f"{self.prompt}\n\n补充信息：\n{text_hint}"
         try:
-            return await self.summarizer.summarize_images(payloads, prompt=prompt)
+            summary = await self.summarizer.summarize_images(payloads, prompt=prompt)
+            if not summary:
+                self.logger.warning("图片总结为空，可能为模型返回空内容或被过滤")
+            return summary
         except Exception as exc:
             self.logger.error("图片总结失败: %s", exc)
             return None
@@ -707,6 +736,15 @@ class XHSMonitorService:
 
         if self._has_full_image_list(note):
             image_urls = self.client.extract_image_urls_from_note(note)
+            if image_urls and all(self._is_preview_url(url) for url in image_urls):
+                detail_card = await self._fetch_note_detail_card(
+                    session, note_id, note_url
+                )
+                if detail_card:
+                    note_card = detail_card
+                    note_time = note_card.get("time") or note_time
+                    note_type = note_card.get("type") or note_type
+                    image_urls = self.client.extract_image_urls(note_card)
         else:
             detail_card = await self._fetch_note_detail_card(
                 session, note_id, note_url
