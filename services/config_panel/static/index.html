@@ -204,6 +204,10 @@
             <input data-env-key="AI_MODEL" placeholder="AI_MODEL" />
           </div>
           <div>
+            <label>AI Max Tokens</label>
+            <input data-env-key="AI_MAX_TOKENS" placeholder="留空或 0 表示不限制" />
+          </div>
+          <div>
             <label>XHS Cookie</label>
             <textarea data-env-key="XHS_COOKIE" placeholder="XHS_COOKIE"></textarea>
           </div>
@@ -214,6 +218,14 @@
           <div>
             <label>XHS 文本截断上限</label>
             <input data-env-key="XHS_TEXT_HINT_MAX_LEN" placeholder="800" />
+          </div>
+          <div>
+            <label>XHS 单次图片上限</label>
+            <input data-env-key="XHS_IMAGE_BATCH_SIZE" placeholder="5" />
+          </div>
+          <div>
+            <label>API 失败重试延迟（秒）</label>
+            <input data-env-key="API_RETRY_DELAY" placeholder="30" />
           </div>
           <div>
             <label>User-Agent</label>

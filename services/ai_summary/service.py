@@ -198,7 +198,7 @@ class AISummaryService:
             return None
 
         content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
-        for img in images[:4]:
+        for img in images:
             mime = img.get("mime", "image/jpeg")
             b64 = img.get("base64", "")
             if not b64:
@@ -216,8 +216,13 @@ class AISummaryService:
         ]
 
         try:
+            max_tokens = (
+                AI_CONFIG.get("max_tokens")
+                if isinstance(AI_CONFIG.get("max_tokens"), int)
+                else None
+            )
             return await self.ai_client.chat_completion(
-                messages=messages, temperature=0.4, max_tokens=1200
+                messages=messages, temperature=0.4, max_tokens=max_tokens
             )
         except Exception as e:
             self.logger.error(f"图片总结失败: {e}")

@@ -142,6 +142,11 @@ class MonitorService:
             if author and isinstance(author, dict):
                 pub_ts = author.get("pub_ts")
                 if pub_ts:
+                    try:
+                        pub_ts = int(pub_ts)
+                    except (TypeError, ValueError):
+                        pub_ts = None
+                if pub_ts:
                     dt = datetime.fromtimestamp(pub_ts)
                     return f"发布时间：{dt.strftime('%Y-%m-%d %H:%M:%S')}"
 
@@ -163,12 +168,18 @@ class MonitorService:
                 author = modules.get("module_author", {})
                 if author and isinstance(author, dict):
                     pub_ts = author.get("pub_ts")
-                    if pub_ts:
-                        return int(pub_ts)
+                    if pub_ts is not None:
+                        try:
+                            return int(pub_ts)
+                        except (TypeError, ValueError):
+                            pass
 
             timestamp = item.get("timestamp")
-            if timestamp:
-                return int(timestamp)
+            if timestamp is not None:
+                try:
+                    return int(timestamp)
+                except (TypeError, ValueError):
+                    pass
 
             return 0
         except Exception:
@@ -319,7 +330,7 @@ class MonitorService:
         }
 
         # 导入统一配置的User-Agent
-        from config import USER_AGENT
+        from config import USER_AGENT, ANTI_BAN_CONFIG
 
         headers = {
             "User-Agent": USER_AGENT,  # 使用配置的UA，与浏览器保持一致
@@ -343,19 +354,43 @@ class MonitorService:
             # 即使没有完整Cookie，也添加一些基础标识
             headers["Cookie"] = "buvid3=generated; b_nut=1234567890"
 
-        async with session.get(
-            self.BILI_SPACE_API, params=params, headers=headers, timeout=20
-        ) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
+        retry_delay = ANTI_BAN_CONFIG.get("api_retry_delay", 30)
+        last_error: Optional[Exception] = None
+        for attempt in range(2):
+            try:
+                async with session.get(
+                    self.BILI_SPACE_API, params=params, headers=headers, timeout=20
+                ) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
 
-            # 限制返回的动态数量
-            if "data" in data and "items" in data["data"]:
-                items = data["data"]["items"]
-                if len(items) > limit_recent:
-                    data["data"]["items"] = items[:limit_recent]
+                if data.get("code") != 0 and attempt == 0:
+                    self.logger.warning(
+                        "B站 API 返回错误，%s 秒后重试: code=%s, message=%s",
+                        retry_delay,
+                        data.get("code"),
+                        data.get("message"),
+                    )
+                    await asyncio.sleep(retry_delay)
+                    continue
 
-            return data
+                # 限制返回的动态数量
+                if "data" in data and "items" in data["data"]:
+                    items = data["data"]["items"]
+                    if len(items) > limit_recent:
+                        data["data"]["items"] = items[:limit_recent]
+
+                return data
+            except Exception as exc:
+                last_error = exc
+                if attempt == 0:
+                    self.logger.warning(
+                        "B站 API 请求异常，%s 秒后重试: err=%s", retry_delay, exc
+                    )
+                    await asyncio.sleep(retry_delay)
+                    continue
+                raise
+        raise RuntimeError(f"B站 API 请求失败: {last_error}")
 
     async def process_creator(
         self, session: aiohttp.ClientSession, creator: Creator

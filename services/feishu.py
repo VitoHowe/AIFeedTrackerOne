@@ -85,6 +85,17 @@ class FeishuBot:
         else:
             self.logger.info("飞书应用模式已配置")
 
+    @staticmethod
+    def _safe_field(value: Optional[str], fallback: str) -> str:
+        if value is None:
+            return fallback
+        text = str(value).strip()
+        if not text:
+            return fallback
+        if all(ch in {"?", "？"} for ch in text):
+            return fallback
+        return text
+
     async def upload_image_to_feishu(self, image_url: str) -> Optional[str]:
         """
         上传图片到飞书并获取image key
@@ -212,6 +223,9 @@ class FeishuBot:
         Returns:
             bool: 发送成功返回True
         """
+        influencer = self._safe_field(influencer, "未知博主")
+        platform = self._safe_field(platform, "未知平台")
+
         if not self.has_app_config:
             # 回退到日志模式
             self.logger.info(
@@ -241,6 +255,11 @@ class FeishuBot:
                     "template_variable": {
                         "Influencer": influencer,
                         "platform": platform,
+                        "Platform": platform,
+                        "source": platform,
+                        "Source": platform,
+                        "influencer": influencer,
+                        "creator": influencer,
                         "markdown_content": converted_content,
                     },
                 },

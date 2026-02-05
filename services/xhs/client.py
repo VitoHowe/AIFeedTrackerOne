@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import urllib.parse
@@ -13,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import aiohttp
 
 from .signer import generate_request_params, splice_str, generate_x_b3_traceid, parse_cookies
+from config import ANTI_BAN_CONFIG
 
 
 class XHSClient:
@@ -30,21 +32,56 @@ class XHSClient:
         params: Optional[Dict[str, str]] = None,
         data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        if params:
-            api = splice_str(api, params)
-        headers, cookies, payload = generate_request_params(
-            self.cookies_str, api, data, method
-        )
-        url = self.base_url + api
-        self.logger.debug("XHS %s %s", method, url)
-        timeout = aiohttp.ClientTimeout(total=self.timeout)
-        if method.upper() == "GET":
-            async with session.get(url, headers=headers, cookies=cookies, timeout=timeout) as resp:
-                return await resp.json()
-        async with session.post(
-            url, headers=headers, data=payload, cookies=cookies, timeout=timeout
-        ) as resp:
-            return await resp.json()
+        retry_delay = ANTI_BAN_CONFIG.get("api_retry_delay", 30)
+        api_path = api
+        last_error: Optional[Exception] = None
+        for attempt in range(2):
+            try:
+                api_with_params = splice_str(api_path, params) if params else api_path
+                headers, cookies, payload = generate_request_params(
+                    self.cookies_str, api_with_params, data, method
+                )
+                url = self.base_url + api_with_params
+                self.logger.debug("XHS %s %s", method, url)
+                timeout = aiohttp.ClientTimeout(total=self.timeout)
+                if method.upper() == "GET":
+                    async with session.get(
+                        url, headers=headers, cookies=cookies, timeout=timeout
+                    ) as resp:
+                        res_json = await resp.json()
+                else:
+                    async with session.post(
+                        url, headers=headers, data=payload, cookies=cookies, timeout=timeout
+                    ) as resp:
+                        res_json = await resp.json()
+
+                if (
+                    isinstance(res_json, dict)
+                    and res_json.get("success") is False
+                    and attempt == 0
+                ):
+                    self.logger.warning(
+                        "XHS API 返回失败，%s 秒后重试: api=%s",
+                        retry_delay,
+                        api_with_params,
+                    )
+                    await asyncio.sleep(retry_delay)
+                    continue
+                return res_json
+            except Exception as exc:
+                last_error = exc
+                if attempt == 0:
+                    self.logger.warning(
+                        "XHS API 请求异常，%s 秒后重试: api=%s, err=%s",
+                        retry_delay,
+                        api_with_params,
+                        exc,
+                    )
+                    await asyncio.sleep(retry_delay)
+                    continue
+                break
+        self.logger.error("XHS API 请求失败: %s", last_error)
+        return {}
 
     async def search_user(
         self, session: aiohttp.ClientSession, query: str, page: int = 1
@@ -107,6 +144,31 @@ class XHSClient:
         async with session.get(url, headers=headers, cookies=cookies, timeout=timeout) as resp:
             return await resp.text()
 
+    async def fetch_note_page(
+        self,
+        session: aiohttp.ClientSession,
+        note_id: str,
+        xsec_token: str = "",
+        xsec_source: str = "pc_search",
+    ) -> str:
+        url = f"https://www.xiaohongshu.com/explore/{note_id}"
+        if xsec_token:
+            url = f"{url}?xsec_token={xsec_token}&xsec_source={xsec_source}"
+        headers = {
+            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "cache-control": "no-cache",
+            "pragma": "no-cache",
+            "user-agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            ),
+        }
+        cookies = parse_cookies(self.cookies_str)
+        timeout = aiohttp.ClientTimeout(total=self.timeout)
+        async with session.get(url, headers=headers, cookies=cookies, timeout=timeout) as resp:
+            return await resp.text()
+
     @staticmethod
     def extract_xsec_from_html(html: str) -> Tuple[str, str]:
         token = ""
@@ -115,10 +177,10 @@ class XHSClient:
             return token, source
         token_match = re.search(r"xsec_token=([^&\"']+)", html)
         if token_match:
-            token = token_match.group(1)
+            token = urllib.parse.unquote(token_match.group(1))
         source_match = re.search(r"xsec_source=([^&\"']+)", html)
         if source_match:
-            source = source_match.group(1)
+            source = urllib.parse.unquote(source_match.group(1))
         return token, source
 
     async def get_profile_xsec_token(
@@ -129,6 +191,22 @@ class XHSClient:
             token, source = self.extract_xsec_from_html(html)
             if not token:
                 return False, "profile html missing xsec_token", ("", "")
+            return True, "", (token, source)
+        except Exception as exc:
+            return False, str(exc), ("", "")
+
+    async def get_note_xsec_token(
+        self,
+        session: aiohttp.ClientSession,
+        note_id: str,
+        xsec_token: str = "",
+        xsec_source: str = "pc_search",
+    ) -> Tuple[bool, str, Tuple[str, str]]:
+        try:
+            html = await self.fetch_note_page(session, note_id, xsec_token, xsec_source)
+            token, source = self.extract_xsec_from_html(html)
+            if not token:
+                return False, "note html missing xsec_token", ("", "")
             return True, "", (token, source)
         except Exception as exc:
             return False, str(exc), ("", "")

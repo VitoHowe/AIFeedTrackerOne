@@ -44,6 +44,22 @@ def _get_int_env(name: str, default: int) -> int:
         return default
 
 
+def _get_optional_int_env(name: str) -> Optional[int]:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    value = value.strip()
+    if value == "":
+        return None
+    try:
+        parsed = int(value)
+        if parsed <= 0:
+            return None
+        return parsed
+    except (TypeError, ValueError):
+        return None
+
+
 def _load_env() -> None:
     if env_file.exists():
         load_dotenv(env_file, override=True)
@@ -91,6 +107,7 @@ def reload_config() -> None:
             "api_key": os.getenv("AI_API_KEY"),
             "base_url": os.getenv("AI_BASE_URL"),
             "model": os.getenv("AI_MODEL"),
+            "max_tokens": _get_optional_int_env("AI_MAX_TOKENS"),
         }
     )
 
@@ -100,6 +117,7 @@ def reload_config() -> None:
             "cookie": _strip_wrapping_quotes(os.getenv("XHS_COOKIE")),
             "prompt": os.getenv("XHS_PROMPT"),
             "text_hint_max_len": _get_int_env("XHS_TEXT_HINT_MAX_LEN", 800),
+            "image_batch_size": _get_int_env("XHS_IMAGE_BATCH_SIZE", 5),
         }
     )
 
@@ -125,6 +143,7 @@ def reload_config() -> None:
             "user_agent": USER_AGENT,
             "request_delay": (1, 3),
             "timeout": 30,
+            "api_retry_delay": _get_int_env("API_RETRY_DELAY", 30),
         }
     )
 

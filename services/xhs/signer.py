@@ -53,13 +53,15 @@ def _load_js_context(
     return execjs.compile(content)
 
 try:
-    XS_CTX = _load_js_context(XS_JS_PATH, BASE_DIR)
+    XS_CTX = _load_js_context(XS_JS_PATH)
 except Exception as exc:
     XS_CTX = None
     logger.error("加载小红书签名 JS 失败: %s", exc)
 
 try:
-    XRAY_CTX = _load_js_context(XRAY_JS_PATH, BASE_DIR, rewrite_xray_requires=True, rewrite_base_dir=BASE_DIR)
+    XRAY_CTX = _load_js_context(
+        XRAY_JS_PATH, rewrite_xray_requires=True, rewrite_base_dir=BASE_DIR
+    )
 except Exception as exc:
     XRAY_CTX = None
     logger.error("加载小红书 xray JS 失败: %s", exc)
@@ -98,13 +100,13 @@ def get_request_headers_template() -> Dict[str, str]:
     return {
         "authority": "edith.xiaohongshu.com",
         "accept": "application/json, text/plain, */*",
-        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
         "cache-control": "no-cache",
         "content-type": "application/json;charset=UTF-8",
         "origin": "https://www.xiaohongshu.com",
         "pragma": "no-cache",
         "referer": "https://www.xiaohongshu.com/",
-        "sec-ch-ua": "\"Chromium\";v=\"122\", \"Not(A:Brand\";v=\"24\", \"Google Chrome\";v=\"122\"",
+        "sec-ch-ua": "\"Not A(Brand\";v=\"99\", \"Microsoft Edge\";v=\"121\", \"Chromium\";v=\"121\"",
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": "\"Windows\"",
         "sec-fetch-dest": "empty",
@@ -112,7 +114,8 @@ def get_request_headers_template() -> Dict[str, str]:
         "sec-fetch-site": "same-site",
         "user-agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 "
+            "Safari/537.36 Edg/121.0.0.0"
         ),
         "x-b3-traceid": "",
         "x-mns": "unload",
@@ -123,7 +126,9 @@ def get_request_headers_template() -> Dict[str, str]:
     }
 
 
-def _generate_xs_xs_common(a1: str, api: str, data: str, method: str) -> Tuple[str, str, str]:
+def _generate_xs_xs_common(
+    a1: str, api: str, data: Dict | str, method: str
+) -> Tuple[str, str, str]:
     if XS_CTX is None:
         raise RuntimeError("签名 JS 未加载，无法生成小红书签名")
     ret = XS_CTX.call("get_request_headers_params", api, data, a1, method)
@@ -132,9 +137,10 @@ def _generate_xs_xs_common(a1: str, api: str, data: str, method: str) -> Tuple[s
 
 def generate_headers(a1: str, api: str, data: Dict | str | None, method: str) -> Tuple[Dict[str, str], str]:
     payload = ""
+    data_for_sign = data if data is not None else ""
+    xs, xt, xs_common = _generate_xs_xs_common(a1, api, data_for_sign, method)
     if data:
         payload = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
-    xs, xt, xs_common = _generate_xs_xs_common(a1, api, payload, method)
     headers = get_request_headers_template()
     headers["x-s"] = xs
     headers["x-t"] = str(xt)
