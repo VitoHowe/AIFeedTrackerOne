@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+from urllib.parse import urlparse, parse_qs
 from dataclasses import dataclass
 from datetime import datetime, date
 from typing import Any, Dict, List, Optional
@@ -173,13 +174,23 @@ class XHSMonitorService:
     async def _resolve_user(
         self, session: aiohttp.ClientSession, creator: XHSCreator
     ) -> Optional[Dict[str, str]]:
-        def _extract_profile_id(raw: str) -> str:
+        def _extract_profile_hint(raw: str) -> tuple[str, str, str]:
             if not raw:
-                return ""
+                return "", "", ""
+            token = ""
+            source = ""
+            raw = raw.strip()
             if "xiaohongshu.com/user/profile/" in raw:
-                raw = raw.split("xiaohongshu.com/user/profile/")[-1]
-                raw = raw.split("?")[0]
-            return raw
+                try:
+                    parsed = urlparse(raw)
+                    raw = parsed.path.split("xiaohongshu.com/user/profile/")[-1]
+                    qs = parse_qs(parsed.query)
+                    token = (qs.get("xsec_token") or [""])[0]
+                    source = (qs.get("xsec_source") or [""])[0]
+                except Exception:
+                    raw = raw.split("xiaohongshu.com/user/profile/")[-1]
+            raw = raw.split("?")[0]
+            return raw, token, source
 
         def _is_profile_id(raw: str) -> bool:
             return bool(re.fullmatch(r"[0-9a-f]{24}", raw))
@@ -207,17 +218,39 @@ class XHSMonitorService:
                 self.logger.warning("未找到用户: %s", keyword)
             return users, res
 
-        raw_id = _extract_profile_id(creator.red_id)
+        raw_id, hint_token, hint_source = _extract_profile_hint(creator.red_id)
         if _is_profile_id(raw_id):
+            if hint_token:
+                return {
+                    "user_id": raw_id,
+                    "xsec_token": hint_token,
+                    "xsec_source": hint_source or "pc_user",
+                    "name": creator.name,
+                }
             ok, msg, token_data = await self.client.get_profile_xsec_token(session, raw_id)
-            if not ok:
-                self.logger.warning("获取 profile xsec_token 失败: %s, msg=%s", raw_id, msg)
-            token, source = token_data
+            if ok:
+                token, source = token_data
+                if token:
+                    return {
+                        "user_id": raw_id,
+                        "xsec_token": token,
+                        "xsec_source": source or "pc_user",
+                        "name": creator.name,
+                    }
+            self.logger.warning("获取 profile xsec_token 失败: %s, msg=%s", raw_id, msg)
+            fallback_keyword = creator.name or raw_id
+            users, _ = await _search(fallback_keyword)
+            if not users:
+                return None
+            target = users[0]
+            if not (target.get("xsec_token") or ""):
+                self.logger.warning("搜索结果缺少 xsec_token: %s", fallback_keyword)
+                return None
             return {
-                "user_id": raw_id,
-                "xsec_token": token or "",
-                "xsec_source": source or "pc_user",
-                "name": creator.name,
+                "user_id": str(target.get("id") or target.get("user_id") or raw_id),
+                "xsec_token": target.get("xsec_token") or "",
+                "xsec_source": target.get("xsec_source") or "pc_search",
+                "name": target.get("name") or creator.name,
             }
 
         users, _ = await _search(raw_id)
