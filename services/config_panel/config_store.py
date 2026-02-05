@@ -16,6 +16,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENV_PATH = PROJECT_ROOT / ".env"
 CREATORS_PATH = PROJECT_ROOT / "data" / "bilibili_creators.json"
 CREATORS_EXAMPLE_PATH = PROJECT_ROOT / "data" / "bilibili_creators.json.example"
+XHS_CREATORS_PATH = PROJECT_ROOT / "data" / "xhs_creators.json"
+XHS_CREATORS_EXAMPLE_PATH = PROJECT_ROOT / "data" / "xhs_creators.json.example"
 
 
 def _load_env_lines(env_path: Path) -> List[str]:
@@ -104,6 +106,14 @@ def _validate_creators(creators: List[dict]) -> None:
             raise ValueError("每个 creator 必须包含 uid 字段")
 
 
+def _validate_xhs_creators(creators: List[dict]) -> None:
+    if not isinstance(creators, list):
+        raise ValueError("xhs_creators 必须是列表")
+    for item in creators:
+        if not isinstance(item, dict) or "red_id" not in item:
+            raise ValueError("每个 xhs creator 必须包含 red_id 字段")
+
+
 def read_creators(path: Path = CREATORS_PATH) -> List[dict]:
     target = path if path.exists() else CREATORS_EXAMPLE_PATH
     if not target.exists():
@@ -118,6 +128,26 @@ def read_creators(path: Path = CREATORS_PATH) -> List[dict]:
 
 def write_creators(creators: List[dict], path: Path = CREATORS_PATH) -> None:
     _validate_creators(creators)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(creators, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+
+
+def read_xhs_creators(path: Path = XHS_CREATORS_PATH) -> List[dict]:
+    target = path if path.exists() else XHS_CREATORS_EXAMPLE_PATH
+    if not target.exists():
+        return []
+    with open(target, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        raise ValueError("xhs_creators 文件必须是数组")
+    _validate_xhs_creators(data)
+    return data
+
+
+def write_xhs_creators(creators: List[dict], path: Path = XHS_CREATORS_PATH) -> None:
+    _validate_xhs_creators(creators)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(creators, f, ensure_ascii=False, indent=2)

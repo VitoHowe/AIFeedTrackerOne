@@ -19,7 +19,7 @@ from config import PANEL_CONFIG, build_bilibili_cookie, get_config_status, reloa
 
 # 导入核心模块
 from core import configure_logging
-from services import FeishuBot, MonitorService
+from services import FeishuBot, MonitorService, XHSMonitorService
 
 # 导入服务模块
 from services.ai_summary import AISummaryService
@@ -175,10 +175,16 @@ class AIVideoBot:
             monitor_service = MonitorService(
                 feishu_bot=self.feishu_bot, summarizer=self.ai_service, cookie=cookie
             )
+            xhs_monitor = XHSMonitorService(
+                feishu_bot=self.feishu_bot, summarizer=self.ai_service
+            )
 
             # 加载创作者列表
             creators = monitor_service.load_creators_from_file()
-            self.logger.info(f"加载了 {len(creators)} 个创作者")
+            xhs_creators = xhs_monitor.load_creators_from_file()
+            self.logger.info(
+                f"加载了 {len(creators)} 个创作者 + {len(xhs_creators)} 个小红书博主"
+            )
 
             # 发送监控启动通知
             try:
@@ -197,7 +203,15 @@ class AIVideoBot:
                 self.logger.warning(f"发送监控启动通知失败: {e}")
 
             # 启动监控
-            await monitor_service.start_monitoring(creators, once=once)
+            tasks = [
+                asyncio.create_task(
+                    monitor_service.start_monitoring(creators, once=once)
+                ),
+                asyncio.create_task(
+                    xhs_monitor.start_monitoring(xhs_creators, once=once)
+                ),
+            ]
+            await asyncio.gather(*tasks)
 
         except asyncio.CancelledError:
             self.logger.info("监控任务已取消")

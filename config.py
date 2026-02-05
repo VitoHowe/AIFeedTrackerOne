@@ -30,6 +30,7 @@ BILI_VIDEO_API = "https://api.bilibili.com/x/web-interface/view"
 FEISHU_CONFIG: Dict[str, Optional[str]] = {}
 BILIBILI_CONFIG: Dict[str, Optional[str]] = {}
 AI_CONFIG: Dict[str, Optional[str]] = {}
+XHS_CONFIG: Dict[str, Optional[str]] = {}
 PANEL_CONFIG: Dict[str, Optional[str]] = {}
 ANTI_BAN_CONFIG: Dict[str, object] = {}
 USER_AGENT = ""
@@ -93,6 +94,15 @@ def reload_config() -> None:
         }
     )
 
+    XHS_CONFIG.clear()
+    XHS_CONFIG.update(
+        {
+            "cookie": _strip_wrapping_quotes(os.getenv("XHS_COOKIE")),
+            "prompt": os.getenv("XHS_PROMPT"),
+            "text_hint_max_len": _get_int_env("XHS_TEXT_HINT_MAX_LEN", 800),
+        }
+    )
+
     global USER_AGENT
     env_ua = _strip_wrapping_quotes(os.getenv("USER_AGENT"))
     USER_AGENT = env_ua or (
@@ -136,6 +146,7 @@ def get_config_status() -> dict:
             FEISHU_CONFIG["app_id"] and FEISHU_CONFIG["app_secret"]
         ),
         "bilibili_configured": bool(BILIBILI_CONFIG["SESSDATA"]),
+        "xhs_configured": bool(XHS_CONFIG.get("cookie")),
         "cookie_available": bool(build_bilibili_cookie()),
     }
 

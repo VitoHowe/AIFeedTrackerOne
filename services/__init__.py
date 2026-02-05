@@ -5,5 +5,6 @@
 
 from .feishu import FeishuBot
 from .monitor import MonitorService
+from .xhs import XHSMonitorService
 
-__all__ = ["FeishuBot", "MonitorService"]
+__all__ = ["FeishuBot", "MonitorService", "XHSMonitorService"]

@@ -6,7 +6,7 @@ AI总结服务主模块
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from config import AI_CONFIG
 
@@ -179,6 +179,49 @@ class AISummaryService:
                 except Exception:
                     pass
             return False, error_msg, [], []
+
+    async def summarize_images(
+        self,
+        images: List[Dict[str, str]],
+        prompt: str,
+        system_prompt: str = "你是专业的图像内容分析助手。",
+    ) -> Optional[str]:
+        """
+        基于图片进行总结分析（OpenAI 兼容的多模态输入）
+
+        Args:
+            images: [{"mime": "image/jpeg", "base64": "..."}]
+            prompt: 用户提示词
+            system_prompt: 系统提示词
+        """
+        if not images:
+            return None
+
+        content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for img in images[:4]:
+            mime = img.get("mime", "image/jpeg")
+            b64 = img.get("base64", "")
+            if not b64:
+                continue
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64}"},
+                }
+            )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": content},
+        ]
+
+        try:
+            return await self.ai_client.chat_completion(
+                messages=messages, temperature=0.4, max_tokens=1200
+            )
+        except Exception as e:
+            self.logger.error(f"图片总结失败: {e}")
+            return None
 
     async def get_service_statistics(self) -> Dict:
         """
