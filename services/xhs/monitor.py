@@ -253,14 +253,14 @@ class XHSMonitorService:
 
     async def test_latest_note(self, creator: XHSCreator) -> Dict[str, Any]:
         if not self.cookie:
-            raise ValueError("未配置 XHS_COOKIE")
+            raise ValueError("XHS_COOKIE is missing")
         if not self.summarizer:
-            raise ValueError("AI 总结服务未初始化")
+            raise ValueError("AI summary service not initialized")
 
         async with aiohttp.ClientSession() as session:
             user = await self._resolve_user(session, creator)
             if not user or not user.get("user_id"):
-                raise ValueError("未找到用户或缺少 user_id")
+                raise ValueError("user not found or missing user_id")
 
             user_id = user["user_id"]
             xsec_token = user.get("xsec_token") or ""
@@ -269,7 +269,7 @@ class XHSMonitorService:
                 session, user_id, "", xsec_token, xsec_source
             )
             if not ok:
-                raise ValueError(f"获取笔记列表失败: {msg}")
+                raise ValueError(f"failed to fetch notes: {msg}")
 
             notes = res.get("data", {}).get("notes", []) or []
             candidate = None
@@ -283,16 +283,27 @@ class XHSMonitorService:
                     note_id, note.get("xsec_token") or xsec_token, xsec_source
                 )
                 ok, msg, detail = await self.client.get_note_info(session, note_url)
-                if not ok:
+                note_card = {}
+                if ok:
+                    items = detail.get("data", {}).get("items", [])
+                    if not items:
+                        continue
+                    note_card = items[0].get("note_card", {})
+                else:
+                    code = detail.get("code") if isinstance(detail, dict) else None
+                    self.logger.warning(
+                        "failed to fetch note detail: %s, msg=%s, code=%s", note_id, msg, code
+                    )
+                    note_card = note.get("note_card") or {}
+
+                note_time = note_card.get("time") or note.get("time") or 0
+                if note_card and note_card.get("type") != "normal":
                     continue
-                items = detail.get("data", {}).get("items", [])
-                if not items:
-                    continue
-                note_card = items[0].get("note_card", {})
-                note_time = note_card.get("time") or 0
-                if note_card.get("type") != "normal":
-                    continue
-                image_urls = self.client.extract_image_urls(note_card)
+                image_urls = (
+                    self.client.extract_image_urls(note_card)
+                    if note_card
+                    else self.client.extract_image_urls_from_note(note)
+                )
                 if not image_urls:
                     continue
                 if note_time > candidate_time:
@@ -305,18 +316,17 @@ class XHSMonitorService:
                     }
 
             if not candidate:
-                raise ValueError("未找到可分析的图文笔记")
+                raise ValueError("no analyzable image notes found")
 
             images = await self._fetch_images_base64(
                 session, candidate["image_urls"]
             )
-            note_card = candidate["note_card"]
+            note_card = candidate["note_card"] or {}
             text_hint = " ".join(
                 [t for t in [note_card.get("title"), note_card.get("desc")] if t]
             )[: self.text_hint_max_len]
             summary = await self._summarize_images(images, text_hint=text_hint)
 
-            note_card = candidate["note_card"]
             note_time = note_card.get("time") or 0
             publish_time = (
                 datetime.fromtimestamp(note_time / 1000).strftime("%Y-%m-%d %H:%M:%S")
@@ -338,92 +348,6 @@ class XHSMonitorService:
                 },
                 "summary": summary or "",
             }
-
-    async def process_creator(
-        self, session: aiohttp.ClientSession, creator: XHSCreator
-    ) -> None:
-        if not self.cookie:
-            return
-
-        user = await self._resolve_user(session, creator)
-        if not user or not user.get("user_id"):
-            self.logger.warning("未找到用户: %s", creator.red_id)
-            return
-
-        user_id = user["user_id"]
-        xsec_token = user.get("xsec_token") or ""
-        xsec_source = user.get("xsec_source") or "pc_search"
-        ok, msg, res = await self.client.get_user_note_info(
-            session, user_id, "", xsec_token, xsec_source
-        )
-        if not ok:
-            self.logger.warning("获取笔记列表失败: %s, msg=%s", creator.red_id, msg)
-            return
-
-        notes = res.get("data", {}).get("notes", []) or []
-        for note in notes:
-            note_id = note.get("note_id")
-            if not note_id or self.state.has_seen(creator.red_id, note_id):
-                continue
-
-            note_url = self.client.build_note_url(
-                note_id, note.get("xsec_token") or xsec_token, xsec_source
-            )
-            ok, msg, detail = await self.client.get_note_info(session, note_url)
-            if not ok:
-                self.logger.warning("获取笔记详情失败: %s, msg=%s", note_id, msg)
-                continue
-
-            items = detail.get("data", {}).get("items", [])
-            if not items:
-                continue
-            note_card = items[0].get("note_card", {})
-            note_time = note_card.get("time")
-            if not note_time or not self._is_today(note_time):
-                self.state.mark_seen(creator.red_id, note_id)
-                self.state.save()
-                continue
-
-            if note_card.get("type") != "normal":
-                self.state.mark_seen(creator.red_id, note_id)
-                self.state.save()
-                continue
-
-            image_urls = self.client.extract_image_urls(note_card)
-            if not image_urls:
-                self.state.mark_seen(creator.red_id, note_id)
-                self.state.save()
-                continue
-
-            images = await self._download_images(session, creator, note_id, image_urls)
-            text_hint = " ".join(
-                [t for t in [note_card.get("title"), note_card.get("desc")] if t]
-            )[: self.text_hint_max_len]
-            summary = await self._summarize_images(images, text_hint=text_hint)
-
-            title = note_card.get("title") or "无标题"
-            desc = note_card.get("desc") or ""
-            publish_time = datetime.fromtimestamp(note_time / 1000).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-
-            markdown = f"**{title}**\n\n{desc}\n\n"
-            markdown += f"[原帖链接]({note_url})\n\n"
-
-            for idx, img in enumerate(images[:4], 1):
-                markdown += f"![图{idx}]({img['url']})\n"
-
-            if summary:
-                markdown += f"\n\n**AI 总结**\n\n{summary}"
-            markdown += f"\n\n发布时间：{publish_time}"
-
-            if self.feishu_bot:
-                await self.feishu_bot.send_card_message(
-                    creator.name, "小红书", markdown
-                )
-
-            self.state.mark_seen(creator.red_id, note_id)
-            self.state.save()
 
     async def monitor_single_creator(
         self, session: aiohttp.ClientSession, creator: XHSCreator

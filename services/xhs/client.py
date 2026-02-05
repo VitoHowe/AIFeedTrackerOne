@@ -183,3 +183,23 @@ class XHSClient:
             if url:
                 images.append(url)
         return images
+
+
+    @staticmethod
+    def extract_image_urls_from_note(note: Dict[str, Any]) -> List[str]:
+        if not note:
+            return []
+        note_card = note.get("note_card") or {}
+        if note_card:
+            return XHSClient.extract_image_urls(note_card)
+        images: List[str] = []
+        for img in note.get("image_list", []) or []:
+            info_list = img.get("info_list") or []
+            url = None
+            if info_list:
+                url = info_list[-1].get("url") or info_list[0].get("url")
+            if not url:
+                url = img.get("url")
+            if url:
+                images.append(url)
+        return images
