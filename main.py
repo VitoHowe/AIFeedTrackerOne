@@ -56,7 +56,14 @@ async def start_config_panel(on_change=None):
         log_level="info",
     )
     server = uvicorn.Server(config)
-    await server.serve()
+    try:
+        await server.serve()
+    except OSError as exc:
+        logger = logging.getLogger(__name__)
+        logger.warning("????????: %s", exc)
+    except SystemExit as exc:
+        logger = logging.getLogger(__name__)
+        logger.warning("????????: %s", exc)
 
 
 class AIVideoBot:

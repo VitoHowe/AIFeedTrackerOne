@@ -6,12 +6,13 @@
 from __future__ import annotations
 
 import logging
+import re
 import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 
-from .signer import generate_request_params, splice_str, generate_x_b3_traceid
+from .signer import generate_request_params, splice_str, generate_x_b3_traceid, parse_cookies
 
 
 class XHSClient:
@@ -87,6 +88,50 @@ class XHSClient:
             return bool(res_json.get("success")), res_json.get("msg", ""), res_json
         except Exception as exc:
             return False, str(exc), {}
+
+
+    async def fetch_profile_page(self, session: aiohttp.ClientSession, user_id: str) -> str:
+        url = f"https://www.xiaohongshu.com/user/profile/{user_id}"
+        headers = {
+            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "cache-control": "no-cache",
+            "pragma": "no-cache",
+            "user-agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            ),
+        }
+        cookies = parse_cookies(self.cookies_str)
+        timeout = aiohttp.ClientTimeout(total=self.timeout)
+        async with session.get(url, headers=headers, cookies=cookies, timeout=timeout) as resp:
+            return await resp.text()
+
+    @staticmethod
+    def extract_xsec_from_html(html: str) -> Tuple[str, str]:
+        token = ""
+        source = ""
+        if not html:
+            return token, source
+        token_match = re.search(r"xsec_token=([^&\"']+)", html)
+        if token_match:
+            token = token_match.group(1)
+        source_match = re.search(r"xsec_source=([^&\"']+)", html)
+        if source_match:
+            source = source_match.group(1)
+        return token, source
+
+    async def get_profile_xsec_token(
+        self, session: aiohttp.ClientSession, user_id: str
+    ) -> Tuple[bool, str, Tuple[str, str]]:
+        try:
+            html = await self.fetch_profile_page(session, user_id)
+            token, source = self.extract_xsec_from_html(html)
+            if not token:
+                return False, "profile html missing xsec_token", ("", "")
+            return True, "", (token, source)
+        except Exception as exc:
+            return False, str(exc), ("", "")
 
     async def get_note_info(
         self, session: aiohttp.ClientSession, note_url: str

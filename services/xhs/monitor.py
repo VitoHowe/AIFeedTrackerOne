@@ -10,6 +10,7 @@ import base64
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, date
 from typing import Any, Dict, List, Optional
@@ -134,6 +135,17 @@ class XHSMonitorService:
     async def _resolve_user(
         self, session: aiohttp.ClientSession, creator: XHSCreator
     ) -> Optional[Dict[str, str]]:
+        def _extract_profile_id(raw: str) -> str:
+            if not raw:
+                return ""
+            if "xiaohongshu.com/user/profile/" in raw:
+                raw = raw.split("xiaohongshu.com/user/profile/")[-1]
+                raw = raw.split("?")[0]
+            return raw
+
+        def _is_profile_id(raw: str) -> bool:
+            return bool(re.fullmatch(r"[0-9a-f]{24}", raw))
+
         async def _search(keyword: str):
             ok, msg, res = await self.client.search_user(session, keyword, page=1)
             if not ok:
@@ -146,17 +158,30 @@ class XHSMonitorService:
                 return None, res
             users = res.get("data", {}).get("users", [])
             if not users:
-                self.logger.warning("??????????: %s", keyword)
+                self.logger.warning("???????: %s", keyword)
             return users, res
 
-        users, _ = await _search(creator.red_id)
-        if not users and creator.name and creator.name != creator.red_id:
+        raw_id = _extract_profile_id(creator.red_id)
+        if _is_profile_id(raw_id):
+            ok, msg, token_data = await self.client.get_profile_xsec_token(session, raw_id)
+            if not ok:
+                self.logger.warning("?? profile xsec_token ??: %s, msg=%s", raw_id, msg)
+            token, source = token_data
+            return {
+                "user_id": raw_id,
+                "xsec_token": token or "",
+                "xsec_source": source or "pc_user",
+                "name": creator.name,
+            }
+
+        users, _ = await _search(raw_id)
+        if not users and creator.name and creator.name != raw_id:
             users, _ = await _search(creator.name)
         if not users:
             return None
         target = None
         for u in users:
-            if str(u.get("red_id")) == creator.red_id:
+            if str(u.get("red_id")) == raw_id:
                 target = u
                 break
         if not target:
@@ -164,6 +189,7 @@ class XHSMonitorService:
         return {
             "user_id": str(target.get("id") or target.get("user_id") or ""),
             "xsec_token": target.get("xsec_token") or "",
+            "xsec_source": target.get("xsec_source") or "pc_search",
             "name": target.get("name") or creator.name,
         }
 
@@ -238,8 +264,9 @@ class XHSMonitorService:
 
             user_id = user["user_id"]
             xsec_token = user.get("xsec_token") or ""
+            xsec_source = user.get("xsec_source") or "pc_search"
             ok, msg, res = await self.client.get_user_note_info(
-                session, user_id, "", xsec_token, "pc_search"
+                session, user_id, "", xsec_token, xsec_source
             )
             if not ok:
                 raise ValueError(f"获取笔记列表失败: {msg}")
@@ -253,7 +280,7 @@ class XHSMonitorService:
                 if not note_id:
                     continue
                 note_url = self.client.build_note_url(
-                    note_id, note.get("xsec_token") or xsec_token, "pc_search"
+                    note_id, note.get("xsec_token") or xsec_token, xsec_source
                 )
                 ok, msg, detail = await self.client.get_note_info(session, note_url)
                 if not ok:
@@ -325,8 +352,9 @@ class XHSMonitorService:
 
         user_id = user["user_id"]
         xsec_token = user.get("xsec_token") or ""
+        xsec_source = user.get("xsec_source") or "pc_search"
         ok, msg, res = await self.client.get_user_note_info(
-            session, user_id, "", xsec_token, "pc_search"
+            session, user_id, "", xsec_token, xsec_source
         )
         if not ok:
             self.logger.warning("获取笔记列表失败: %s, msg=%s", creator.red_id, msg)
@@ -339,7 +367,7 @@ class XHSMonitorService:
                 continue
 
             note_url = self.client.build_note_url(
-                note_id, note.get("xsec_token") or xsec_token, "pc_search"
+                note_id, note.get("xsec_token") or xsec_token, xsec_source
             )
             ok, msg, detail = await self.client.get_note_info(session, note_url)
             if not ok:
