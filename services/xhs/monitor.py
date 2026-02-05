@@ -134,11 +134,24 @@ class XHSMonitorService:
     async def _resolve_user(
         self, session: aiohttp.ClientSession, creator: XHSCreator
     ) -> Optional[Dict[str, str]]:
-        ok, msg, res = await self.client.search_user(session, creator.red_id, page=1)
-        if not ok:
-            self.logger.warning("搜索用户失败: %s, msg=%s", creator.red_id, msg)
-            return None
-        users = res.get("data", {}).get("users", [])
+        async def _search(keyword: str):
+            ok, msg, res = await self.client.search_user(session, keyword, page=1)
+            if not ok:
+                self.logger.warning(
+                    "??????: %s, msg=%s, code=%s",
+                    keyword,
+                    msg,
+                    res.get("code"),
+                )
+                return None, res
+            users = res.get("data", {}).get("users", [])
+            if not users:
+                self.logger.warning("??????????: %s", keyword)
+            return users, res
+
+        users, _ = await _search(creator.red_id)
+        if not users and creator.name and creator.name != creator.red_id:
+            users, _ = await _search(creator.name)
         if not users:
             return None
         target = None
