@@ -187,12 +187,20 @@ class XHSMonitorService:
         async def _search(keyword: str):
             ok, msg, res = await self.client.search_user(session, keyword, page=1)
             if not ok:
+                code = res.get("code") if isinstance(res, dict) else None
                 self.logger.warning(
                     "搜索用户失败: %s, msg=%s, code=%s",
                     keyword,
                     msg,
-                    res.get("code"),
+                    code,
                 )
+                if isinstance(res, dict) and res:
+                    self.logger.debug("搜索用户响应: %s", res)
+                if code == -1:
+                    self.logger.warning(
+                        "搜索用户可能触发风控: %s，建议填写主页 profile id(24 位 hex) 或更新 Cookie",
+                        keyword,
+                    )
                 return None, res
             users = res.get("data", {}).get("users", [])
             if not users:

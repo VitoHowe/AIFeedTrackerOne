@@ -7,14 +7,28 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import re
+import string
+import time
 import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 
-from .signer import generate_request_params, splice_str, generate_x_b3_traceid, parse_cookies
+from .signer import generate_request_params, splice_str, parse_cookies
 from config import ANTI_BAN_CONFIG
+
+
+_BASE36 = string.ascii_lowercase + string.digits
+
+
+def _random_base36(length: int) -> str:
+    return "".join(random.choice(_BASE36) for _ in range(length))
+
+
+def _generate_request_id() -> str:
+    return f"{random.randint(10000000, 99999999)}-{int(time.time() * 1000)}"
 
 
 class XHSClient:
@@ -61,9 +75,11 @@ class XHSClient:
                     and attempt == 0
                 ):
                     self.logger.warning(
-                        "XHS API 返回失败，%s 秒后重试: api=%s",
+                        "XHS API 返回失败，%s 秒后重试: api=%s, code=%s, msg=%s",
                         retry_delay,
                         api_with_params,
+                        res_json.get("code"),
+                        res_json.get("msg"),
                     )
                     await asyncio.sleep(retry_delay)
                     continue
@@ -90,11 +106,11 @@ class XHSClient:
         data = {
             "search_user_request": {
                 "keyword": query,
-                "search_id": generate_x_b3_traceid(21),
+                "search_id": _random_base36(21),
                 "page": page,
                 "page_size": 15,
                 "biz_type": "web_search_user",
-                "request_id": generate_x_b3_traceid(16),
+                "request_id": _generate_request_id(),
             }
         }
         try:

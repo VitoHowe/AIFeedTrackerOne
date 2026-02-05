@@ -60,7 +60,10 @@ except Exception as exc:
 
 try:
     XRAY_CTX = _load_js_context(
-        XRAY_JS_PATH, rewrite_xray_requires=True, rewrite_base_dir=BASE_DIR
+        XRAY_JS_PATH,
+        cwd=BASE_DIR,
+        rewrite_xray_requires=True,
+        rewrite_base_dir=BASE_DIR,
     )
 except Exception as exc:
     XRAY_CTX = None
