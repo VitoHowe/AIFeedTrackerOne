@@ -21,21 +21,24 @@ XS_JS_PATH = STATIC_DIR / "xhs_xs_xsc_56.js"
 XRAY_JS_PATH = STATIC_DIR / "xhs_xray.js"
 
 
-def _load_js_context(js_path: Path) -> execjs.ExternalRuntime.Context:
+def _load_js_context(js_path: Path, cwd: Path | None = None) -> execjs.ExternalRuntime.Context:
     if not js_path.exists():
         raise FileNotFoundError(f"JS 文件不存在: {js_path}")
     content = js_path.read_text(encoding="utf-8")
+    if cwd is not None:
+        cwd_str = str(cwd).replace("\\", "\\\\")
+        content = f"process.chdir('{cwd_str}');\n{content}"
     return execjs.compile(content)
 
 
 try:
-    XS_CTX = _load_js_context(XS_JS_PATH)
+    XS_CTX = _load_js_context(XS_JS_PATH, BASE_DIR)
 except Exception as exc:
     XS_CTX = None
     logger.error("加载小红书签名 JS 失败: %s", exc)
 
 try:
-    XRAY_CTX = _load_js_context(XRAY_JS_PATH)
+    XRAY_CTX = _load_js_context(XRAY_JS_PATH, BASE_DIR)
 except Exception as exc:
     XRAY_CTX = None
     logger.error("加载小红书 xray JS 失败: %s", exc)
