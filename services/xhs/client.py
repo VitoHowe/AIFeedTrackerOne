@@ -193,6 +193,7 @@ class XHSClient:
         if note_card:
             return XHSClient.extract_image_urls(note_card)
         images: List[str] = []
+        seen = set()
         for img in note.get("image_list", []) or []:
             info_list = img.get("info_list") or []
             url = None
@@ -201,5 +202,23 @@ class XHSClient:
             if not url:
                 url = img.get("url")
             if url:
-                images.append(url)
+                if url not in seen:
+                    images.append(url)
+                    seen.add(url)
+        cover = note.get("cover")
+        if isinstance(cover, dict):
+            info_list = cover.get("info_list") or []
+            for info in info_list:
+                url = info.get("url")
+                if url and url not in seen:
+                    images.append(url)
+                    seen.add(url)
+            for key in ("url", "url_default", "url_pre"):
+                url = cover.get(key)
+                if url and url not in seen:
+                    images.append(url)
+                    seen.add(url)
+        elif isinstance(cover, str):
+            if cover and cover not in seen:
+                images.append(cover)
         return images

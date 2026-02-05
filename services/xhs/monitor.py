@@ -282,32 +282,44 @@ class XHSMonitorService:
                 note_url = self.client.build_note_url(
                     note_id, note.get("xsec_token") or xsec_token, xsec_source
                 )
-                ok, msg, detail = await self.client.get_note_info(session, note_url)
-                note_card = {}
-                if ok:
-                    items = detail.get("data", {}).get("items", [])
-                    if not items:
-                        continue
-                    note_card = items[0].get("note_card", {})
-                else:
-                    code = detail.get("code") if isinstance(detail, dict) else None
-                    self.logger.warning(
-                        "failed to fetch note detail: %s, msg=%s, code=%s", note_id, msg, code
-                    )
-                    note_card = note.get("note_card") or {}
-
+                note_card = note.get("note_card") or {}
                 note_time = note_card.get("time") or note.get("time") or 0
-                if note_card and note_card.get("type") != "normal":
+                note_type = note_card.get("type") or note.get("type")
+                image_urls = self.client.extract_image_urls_from_note(note)
+
+                if not image_urls:
+                    ok, msg, detail = await self.client.get_note_info(session, note_url)
+                    if ok:
+                        items = detail.get("data", {}).get("items", [])
+                        if not items:
+                            continue
+                        note_card = items[0].get("note_card", {})
+                        note_time = note_card.get("time") or note_time
+                        image_urls = self.client.extract_image_urls(note_card)
+                    else:
+                        code = detail.get("code") if isinstance(detail, dict) else None
+                        self.logger.warning(
+                            "failed to fetch note detail: %s, msg=%s, code=%s",
+                            note_id,
+                            msg,
+                            code,
+                        )
+                        continue
+
+                if note_type and note_type != "normal":
                     continue
-                image_urls = (
-                    self.client.extract_image_urls(note_card)
-                    if note_card
-                    else self.client.extract_image_urls_from_note(note)
-                )
                 if not image_urls:
                     continue
-                if note_time > candidate_time:
-                    candidate_time = note_time
+                if note_time:
+                    if note_time > candidate_time:
+                        candidate_time = note_time
+                        candidate = {
+                            "note_id": note_id,
+                            "note_url": note_url,
+                            "note_card": note_card,
+                            "image_urls": image_urls,
+                        }
+                elif candidate is None:
                     candidate = {
                         "note_id": note_id,
                         "note_url": note_url,
@@ -322,9 +334,13 @@ class XHSMonitorService:
                 session, candidate["image_urls"]
             )
             note_card = candidate["note_card"] or {}
-            text_hint = " ".join(
-                [t for t in [note_card.get("title"), note_card.get("desc")] if t]
-            )[: self.text_hint_max_len]
+            title = note_card.get("title") or note_card.get("display_title") or ""
+            if not title and notes:
+                title = notes[0].get("display_title") or ""
+            desc = note_card.get("desc") or ""
+            text_hint = " ".join([t for t in [title, desc] if t])[
+                : self.text_hint_max_len
+            ]
             summary = await self._summarize_images(images, text_hint=text_hint)
 
             note_time = note_card.get("time") or 0
@@ -341,8 +357,8 @@ class XHSMonitorService:
                 "note": {
                     "note_id": candidate["note_id"],
                     "note_url": candidate["note_url"],
-                    "title": note_card.get("title") or "",
-                    "desc": note_card.get("desc") or "",
+                    "title": title,
+                    "desc": desc,
                     "publish_time": publish_time,
                     "image_urls": candidate["image_urls"][:4],
                 },
@@ -357,7 +373,7 @@ class XHSMonitorService:
 
         user = await self._resolve_user(session, creator)
         if not user or not user.get("user_id"):
-            self.logger.warning("未找到用户: %s", creator.red_id)
+            self.logger.warning("?????: %s", creator.red_id)
             return
 
         user_id = user["user_id"]
@@ -369,7 +385,7 @@ class XHSMonitorService:
         if not ok:
             code = res.get("code") if isinstance(res, dict) else None
             self.logger.warning(
-                "获取笔记列表失败: %s, msg=%s, code=%s", creator.red_id, msg, code
+                "????????: %s, msg=%s, code=%s", creator.red_id, msg, code
             )
             return
 
@@ -382,51 +398,57 @@ class XHSMonitorService:
             note_url = self.client.build_note_url(
                 note_id, note.get("xsec_token") or xsec_token, xsec_source
             )
-            ok, msg, detail = await self.client.get_note_info(session, note_url)
-            note_card = {}
-            if ok:
-                items = detail.get("data", {}).get("items", [])
-                if not items:
-                    continue
-                note_card = items[0].get("note_card", {})
-            else:
-                code = detail.get("code") if isinstance(detail, dict) else None
-                self.logger.warning(
-                    "获取笔记详情失败: %s, msg=%s, code=%s", note_id, msg, code
-                )
-                note_card = note.get("note_card") or {}
-
+            note_card = note.get("note_card") or {}
             note_time = note_card.get("time") or note.get("time")
-            if not note_time or not self._is_today(note_time):
+            note_type = note_card.get("type") or note.get("type")
+            image_urls = self.client.extract_image_urls_from_note(note)
+
+            if not image_urls:
+                ok, msg, detail = await self.client.get_note_info(session, note_url)
+                if ok:
+                    items = detail.get("data", {}).get("items", [])
+                    if not items:
+                        continue
+                    note_card = items[0].get("note_card", {})
+                    note_time = note_card.get("time") or note_time
+                    note_type = note_card.get("type") or note_type
+                    image_urls = self.client.extract_image_urls(note_card)
+                else:
+                    code = detail.get("code") if isinstance(detail, dict) else None
+                    self.logger.warning(
+                        "????????: %s, msg=%s, code=%s", note_id, msg, code
+                    )
+                    self.state.mark_seen(creator.red_id, note_id)
+                    self.state.save()
+                    continue
+
+            if note_time and not self._is_today(note_time):
                 self.state.mark_seen(creator.red_id, note_id)
                 self.state.save()
                 continue
 
-            if note_card and note_card.get("type") != "normal":
+            if note_type and note_type != "normal":
                 self.state.mark_seen(creator.red_id, note_id)
                 self.state.save()
                 continue
 
-            image_urls = (
-                self.client.extract_image_urls(note_card)
-                if note_card
-                else self.client.extract_image_urls_from_note(note)
-            )
             if not image_urls:
                 self.state.mark_seen(creator.red_id, note_id)
                 self.state.save()
                 continue
 
             images = await self._download_images(session, creator, note_id, image_urls)
-            text_hint = " ".join(
-                [t for t in [note_card.get("title"), note_card.get("desc")] if t]
-            )[: self.text_hint_max_len]
+            title = note_card.get("title") or note.get("display_title") or "???"
+            desc = note_card.get("desc") or ""
+            text_hint = " ".join([t for t in [title, desc] if t])[
+                : self.text_hint_max_len
+            ]
             summary = await self._summarize_images(images, text_hint=text_hint)
 
-            title = note_card.get("title") or "无标题"
-            desc = note_card.get("desc") or ""
-            publish_time = datetime.fromtimestamp(note_time / 1000).strftime(
-                "%Y-%m-%d %H:%M:%S"
+            publish_time = (
+                datetime.fromtimestamp(note_time / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                if note_time
+                else ""
             )
 
             markdown = f"**{title}**\n\n{desc}\n\n"
@@ -437,15 +459,19 @@ class XHSMonitorService:
 
             if summary:
                 markdown += f"\n\n**AI 总结**\n\n{summary}"
-            markdown += f"\n\n发布时间：{publish_time}"
+            if publish_time:
+                markdown += f"\n\n发布时间：{publish_time}"
 
             if self.feishu_bot:
                 await self.feishu_bot.send_card_message(
-                    creator.name, "小红书", markdown
+                    creator.name, "???", markdown
                 )
 
             self.state.mark_seen(creator.red_id, note_id)
             self.state.save()
+
+            if not note_time:
+                break
 
     async def monitor_single_creator(
         self, session: aiohttp.ClientSession, creator: XHSCreator

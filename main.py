@@ -8,6 +8,7 @@ AI视频机器人主程序
 import asyncio
 import logging
 import sys
+import socket
 from pathlib import Path
 from typing import Optional
 
@@ -49,10 +50,23 @@ async def start_config_panel(on_change=None):
     except ImportError:
         raise RuntimeError("缺少 uvicorn 依赖，请先安装后再启动配置面板")
 
+    host = PANEL_CONFIG.get("host", "127.0.0.1")
+    port = PANEL_CONFIG.get("port", 8765)
+    check_host = "127.0.0.1" if host in ("0.0.0.0", "localhost") else host
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            if sock.connect_ex((check_host, port)) == 0:
+                logger = logging.getLogger(__name__)
+                logger.warning("配置面板端口已占用，跳过启动: %s:%s", host, port)
+                return
+    except Exception:
+        pass
+
     config = uvicorn.Config(
         create_app(on_change=on_change),
-        host=PANEL_CONFIG.get("host", "127.0.0.1"),
-        port=PANEL_CONFIG.get("port", 8765),
+        host=host,
+        port=port,
         log_level="info",
     )
     server = uvicorn.Server(config)
