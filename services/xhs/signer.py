@@ -21,15 +21,36 @@ XS_JS_PATH = STATIC_DIR / "xhs_xs_xsc_56.js"
 XRAY_JS_PATH = STATIC_DIR / "xhs_xray.js"
 
 
-def _load_js_context(js_path: Path, cwd: Path | None = None) -> execjs.ExternalRuntime.Context:
+def _rewrite_xray_requires(content: str, base_dir: Path) -> str:
+    static_dir = (base_dir / "static").resolve()
+    pack_paths = {
+        "xhs_xray_pack1.js": (static_dir / "xhs_xray_pack1.js").as_posix(),
+        "xhs_xray_pack2.js": (static_dir / "xhs_xray_pack2.js").as_posix(),
+    }
+    prefixes = ("./", "./static/", "../static/")
+    for filename, abs_path in pack_paths.items():
+        for prefix in prefixes:
+            content = content.replace(f"require('{prefix}{filename}')", f"require('{abs_path}')")
+            content = content.replace(f'require("{prefix}{filename}")', f'require("{abs_path}")')
+    return content
+
+
+def _load_js_context(
+    js_path: Path,
+    cwd: Path | None = None,
+    rewrite_xray_requires: bool = False,
+    rewrite_base_dir: Path | None = None,
+) -> execjs.ExternalRuntime.Context:
     if not js_path.exists():
         raise FileNotFoundError(f"JS 文件不存在: {js_path}")
     content = js_path.read_text(encoding="utf-8")
+    if rewrite_xray_requires:
+        base_dir = rewrite_base_dir or js_path.parent
+        content = _rewrite_xray_requires(content, base_dir)
     if cwd is not None:
         cwd_str = str(cwd).replace("\\", "\\\\")
         content = f"process.chdir('{cwd_str}');\n{content}"
     return execjs.compile(content)
-
 
 try:
     XS_CTX = _load_js_context(XS_JS_PATH, BASE_DIR)
@@ -38,7 +59,7 @@ except Exception as exc:
     logger.error("加载小红书签名 JS 失败: %s", exc)
 
 try:
-    XRAY_CTX = _load_js_context(XRAY_JS_PATH, BASE_DIR)
+    XRAY_CTX = _load_js_context(XRAY_JS_PATH, BASE_DIR, rewrite_xray_requires=True, rewrite_base_dir=BASE_DIR)
 except Exception as exc:
     XRAY_CTX = None
     logger.error("加载小红书 xray JS 失败: %s", exc)
