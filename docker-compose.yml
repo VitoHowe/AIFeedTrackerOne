@@ -9,6 +9,7 @@ services:
       - .env
     environment:
       - PANEL_HOST=0.0.0.0
+      - EXECJS_RUNTIME=Node
       - TZ=Asia/Shanghai
     ports:
       - "${PANEL_PORT:-8765}:${PANEL_PORT:-8765}"

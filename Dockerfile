@@ -7,12 +7,14 @@ WORKDIR /app
 # 设置环境变量
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
+ENV EXECJS_RUNTIME=Node
 
 # 替换 Debian 系统源为清华源（适配 bullseye 版本）
 RUN echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye main contrib non-free" > /etc/apt/sources.list && \
     echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye-updates main contrib non-free" >> /etc/apt/sources.list && \
     echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian-security bullseye-security main contrib non-free" >> /etc/apt/sources.list && \
     apt-get update && \
+    apt-get install -y --no-install-recommends nodejs npm && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
