@@ -10,6 +10,7 @@ import base64
 import json
 import logging
 import os
+import random
 import re
 from urllib.parse import urlparse, parse_qs
 from dataclasses import dataclass
@@ -843,7 +844,15 @@ class XHSMonitorService:
                 )
                 await self.process_creator(session, creator)
 
-                await asyncio.sleep(creator.check_interval)
+                jitter = random.uniform(0.8, 1.2)
+                sleep_time = creator.check_interval * jitter
+                next_check = sleep_time / 60
+                self.logger.info(
+                    "小红书博主 %s 下次检查时间: %.1f 分钟后",
+                    creator.name,
+                    next_check,
+                )
+                await asyncio.sleep(sleep_time)
             except Exception as exc:
                 self.logger.error("监控小红书博主异常: %s", exc)
                 await asyncio.sleep(60)

@@ -209,12 +209,21 @@ class AIVideoBot:
 
             # 发送监控启动通知
             try:
-                creator_names = ", ".join([c.name for c in creators[:3]])
+                bili_names = ", ".join([c.name for c in creators[:3]])
                 if len(creators) > 3:
-                    creator_names += f" 等{len(creators)}个创作者"
+                    bili_names += f" 等{len(creators)}个创作者"
+                if not bili_names:
+                    bili_names = "无"
 
-                content = f"监控服务已启动\n\n"
-                content += f"**监控对象:** {creator_names}\n"
+                xhs_names = ", ".join([c.name for c in xhs_creators[:3]])
+                if len(xhs_creators) > 3:
+                    xhs_names += f" 等{len(xhs_creators)}个博主"
+                if not xhs_names:
+                    xhs_names = "无"
+
+                content = "监控服务已启动\n\n"
+                content += f"**B站:** {bili_names}\n"
+                content += f"**小红书:** {xhs_names}\n"
                 content += f"**模式:** {'单次检查' if once else '持续监控'}"
 
                 await self.feishu_bot.send_system_notification(
