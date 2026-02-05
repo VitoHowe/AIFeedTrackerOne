@@ -237,15 +237,25 @@ class XHSMonitorService:
                         "xsec_source": source or "pc_user",
                         "name": creator.name,
                     }
-            self.logger.warning("获取 profile xsec_token 失败: %s, msg=%s", raw_id, msg)
+            self.logger.warning(
+                "获取 profile xsec_token 失败: %s, msg=%s，开始使用搜索兜底",
+                raw_id,
+                msg,
+            )
             fallback_keyword = creator.name or raw_id
             users, _ = await _search(fallback_keyword)
             if not users:
+                self.logger.warning("搜索兜底失败: %s", fallback_keyword)
                 return None
             target = users[0]
             if not (target.get("xsec_token") or ""):
                 self.logger.warning("搜索结果缺少 xsec_token: %s", fallback_keyword)
                 return None
+            self.logger.info(
+                "搜索兜底成功: %s -> user_id=%s",
+                fallback_keyword,
+                target.get("id") or target.get("user_id") or raw_id,
+            )
             return {
                 "user_id": str(target.get("id") or target.get("user_id") or raw_id),
                 "xsec_token": target.get("xsec_token") or "",
@@ -627,8 +637,12 @@ class XHSMonitorService:
                 "获取笔记列表失败: %s, msg=%s, code=%s", creator.red_id, msg, code
             )
             return
-
         notes = res.get("data", {}).get("notes", []) or []
+        self.logger.info(
+            "笔记列表拉取成功: %s, total=%s",
+            creator.name,
+            len(notes),
+        )
         today_key = date.today().isoformat()
         today_note_ids: List[str] = []
         today_notes: List[Dict[str, Any]] = []
@@ -646,6 +660,7 @@ class XHSMonitorService:
                 note_time_map[note_id] = int(note_time)
 
         if not today_note_ids:
+            self.logger.info("今日无新笔记: %s", creator.name)
             return
 
         seen_today = self.state.get_daily_seen(creator.red_id, today_key)
@@ -761,12 +776,16 @@ class XHSMonitorService:
             return True
 
         if not image_urls:
+            self.logger.info("笔记无图片，跳过AI总结: %s", note_id)
             self.state.add_daily_seen(creator.red_id, today_key, note_id)
             self.state.mark_seen(creator.red_id, note_id)
             return True
 
         image_urls = self._drop_cover_image(note_card, image_urls)
         images = await self._download_images(session, creator, note_id, image_urls)
+        self.logger.info(
+            "图片抓取完成: note=%s, count=%s", note_id, len(images)
+        )
         author_name = self._sanitize_text(
             (note_card.get("user") or {}).get("nickname")
             or (note.get("user") or {}).get("nickname")
