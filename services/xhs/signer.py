@@ -100,25 +100,33 @@ def generate_xray_traceid() -> str:
 
 
 def get_request_headers_template() -> Dict[str, str]:
+    """
+    构建完整的Windows Chrome浏览器请求头模板
+    包含所有必要的浏览器指纹特征，用于伪装成真实的Windows桌面浏览器
+    """
     return {
         "authority": "edith.xiaohongshu.com",
         "accept": "application/json, text/plain, */*",
+        "accept-encoding": "gzip, deflate, br, zstd",
         "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
         "cache-control": "no-cache",
         "content-type": "application/json;charset=UTF-8",
         "origin": "https://www.xiaohongshu.com",
         "pragma": "no-cache",
+        "priority": "u=1, i",
         "referer": "https://www.xiaohongshu.com/",
-        "sec-ch-ua": "\"Not A(Brand\";v=\"99\", \"Microsoft Edge\";v=\"121\", \"Chromium\";v=\"121\"",
+        # Chrome 131 版本的 sec-ch-ua 格式
+        "sec-ch-ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
         "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": "\"Windows\"",
+        "sec-ch-ua-platform": '"Windows"',
         "sec-fetch-dest": "empty",
         "sec-fetch-mode": "cors",
         "sec-fetch-site": "same-site",
+        # Windows 10 + Chrome 131 的标准 User-Agent
         "user-agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 "
-            "Safari/537.36 Edg/121.0.0.0"
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/131.0.0.0 Safari/537.36"
         ),
         "x-b3-traceid": "",
         "x-mns": "unload",

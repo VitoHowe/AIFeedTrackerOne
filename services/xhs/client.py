@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 小红书 API 客户端（PC Web）
+使用 curl_cffi 模拟 Chrome 浏览器 TLS/JA3 指纹，绕过反爬检测
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import time
 import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple
 
-import aiohttp
+from curl_cffi.requests import AsyncSession
 
 from .signer import generate_request_params, splice_str, parse_cookies
 from config import ANTI_BAN_CONFIG
@@ -32,23 +33,71 @@ def _generate_request_id() -> str:
 
 
 class XHSClient:
+    """
+    小红书 API 客户端
+    使用 curl_cffi 模拟完整的 Chrome 浏览器 TLS/JA3 指纹
+    支持 HTTP/2，自动处理压缩，完美伪装成真实浏览器
+    """
+    
+    # Chrome 浏览器版本，用于 curl_cffi 的 impersonate 参数
+    # 支持的版本: chrome99, chrome100, chrome101, chrome104, chrome107, chrome110, 
+    #            chrome116, chrome119, chrome120, chrome123, chrome124, chrome131 等
+    BROWSER_IMPERSONATE = "chrome131"
+    
     def __init__(self, cookies_str: str, timeout: int = 30):
         self.base_url = "https://edith.xiaohongshu.com"
         self.cookies_str = cookies_str or ""
         self.timeout = timeout
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        
+        # Windows 10 + Chrome 131 的标准 User-Agent
+        self.browser_user_agent = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/131.0.0.0 Safari/537.36"
+        )
+        # Chrome 131 版本的 sec-ch-ua 格式
+        self.browser_sec_ch_ua = '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"'
+
+    def _build_browser_headers(self, referer: str) -> Dict[str, str]:
+        """
+        构建完整的浏览器请求头，用于访问小红书网页
+        包含所有必要的浏览器指纹特征
+        """
+        return {
+            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "accept-encoding": "gzip, deflate, br, zstd",
+            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+            "cache-control": "no-cache",
+            "pragma": "no-cache",
+            "priority": "u=0, i",
+            "referer": referer,
+            "sec-ch-ua": self.browser_sec_ch_ua,
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+            "sec-fetch-dest": "document",
+            "sec-fetch-mode": "navigate",
+            "sec-fetch-site": "same-origin",
+            "sec-fetch-user": "?1",
+            "upgrade-insecure-requests": "1",
+            "user-agent": self.browser_user_agent,
+        }
 
     async def _request(
         self,
-        session: aiohttp.ClientSession,
+        session: AsyncSession,
         method: str,
         api: str,
         params: Optional[Dict[str, str]] = None,
         data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        """
+        发送 API 请求，使用 curl_cffi 模拟 Chrome 浏览器指纹
+        """
         retry_delay = ANTI_BAN_CONFIG.get("api_retry_delay", 30)
         api_path = api
         last_error: Optional[Exception] = None
+        
         for attempt in range(2):
             try:
                 api_with_params = splice_str(api_path, params) if params else api_path
@@ -57,17 +106,26 @@ class XHSClient:
                 )
                 url = self.base_url + api_with_params
                 self.logger.debug("XHS %s %s", method, url)
-                timeout = aiohttp.ClientTimeout(total=self.timeout)
+                
                 if method.upper() == "GET":
-                    async with session.get(
-                        url, headers=headers, cookies=cookies, timeout=timeout
-                    ) as resp:
-                        res_json = await resp.json()
+                    resp = await session.get(
+                        url, 
+                        headers=headers, 
+                        cookies=cookies, 
+                        timeout=self.timeout,
+                        impersonate=self.BROWSER_IMPERSONATE
+                    )
                 else:
-                    async with session.post(
-                        url, headers=headers, data=payload, cookies=cookies, timeout=timeout
-                    ) as resp:
-                        res_json = await resp.json()
+                    resp = await session.post(
+                        url, 
+                        headers=headers, 
+                        data=payload, 
+                        cookies=cookies, 
+                        timeout=self.timeout,
+                        impersonate=self.BROWSER_IMPERSONATE
+                    )
+                
+                res_json = resp.json()
 
                 if (
                     isinstance(res_json, dict)
@@ -100,7 +158,7 @@ class XHSClient:
         return {}
 
     async def search_user(
-        self, session: aiohttp.ClientSession, query: str, page: int = 1
+        self, session: AsyncSession, query: str, page: int = 1
     ) -> Tuple[bool, str, Dict[str, Any]]:
         api = "/api/sns/web/v1/search/usersearch"
         data = {
@@ -121,7 +179,7 @@ class XHSClient:
 
     async def get_user_note_info(
         self,
-        session: aiohttp.ClientSession,
+        session: AsyncSession,
         user_id: str,
         cursor: str,
         xsec_token: str,
@@ -143,47 +201,47 @@ class XHSClient:
             return False, str(exc), {}
 
 
-    async def fetch_profile_page(self, session: aiohttp.ClientSession, user_id: str) -> str:
+    async def fetch_profile_page(self, session: AsyncSession, user_id: str) -> str:
+        """
+        获取用户主页 HTML，使用 curl_cffi 模拟 Chrome 浏览器
+        """
         url = f"https://www.xiaohongshu.com/user/profile/{user_id}"
-        headers = {
-            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "cache-control": "no-cache",
-            "pragma": "no-cache",
-            "user-agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            ),
-        }
+        headers = self._build_browser_headers("https://www.xiaohongshu.com/")
         cookies = parse_cookies(self.cookies_str)
-        timeout = aiohttp.ClientTimeout(total=self.timeout)
-        async with session.get(url, headers=headers, cookies=cookies, timeout=timeout) as resp:
-            return await resp.text()
+        
+        resp = await session.get(
+            url, 
+            headers=headers, 
+            cookies=cookies, 
+            timeout=self.timeout,
+            impersonate=self.BROWSER_IMPERSONATE
+        )
+        return resp.text
 
     async def fetch_note_page(
         self,
-        session: aiohttp.ClientSession,
+        session: AsyncSession,
         note_id: str,
         xsec_token: str = "",
         xsec_source: str = "pc_search",
     ) -> str:
+        """
+        获取笔记页面 HTML，使用 curl_cffi 模拟 Chrome 浏览器
+        """
         url = f"https://www.xiaohongshu.com/explore/{note_id}"
         if xsec_token:
             url = f"{url}?xsec_token={xsec_token}&xsec_source={xsec_source}"
-        headers = {
-            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "cache-control": "no-cache",
-            "pragma": "no-cache",
-            "user-agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            ),
-        }
+        headers = self._build_browser_headers("https://www.xiaohongshu.com/")
         cookies = parse_cookies(self.cookies_str)
-        timeout = aiohttp.ClientTimeout(total=self.timeout)
-        async with session.get(url, headers=headers, cookies=cookies, timeout=timeout) as resp:
-            return await resp.text()
+        
+        resp = await session.get(
+            url, 
+            headers=headers, 
+            cookies=cookies, 
+            timeout=self.timeout,
+            impersonate=self.BROWSER_IMPERSONATE
+        )
+        return resp.text
 
     @staticmethod
     def extract_xsec_from_html(html: str) -> Tuple[str, str]:
@@ -200,7 +258,7 @@ class XHSClient:
         return token, source
 
     async def get_profile_xsec_token(
-        self, session: aiohttp.ClientSession, user_id: str
+        self, session: AsyncSession, user_id: str
     ) -> Tuple[bool, str, Tuple[str, str]]:
         try:
             html = await self.fetch_profile_page(session, user_id)
@@ -213,7 +271,7 @@ class XHSClient:
 
     async def get_note_xsec_token(
         self,
-        session: aiohttp.ClientSession,
+        session: AsyncSession,
         note_id: str,
         xsec_token: str = "",
         xsec_source: str = "pc_search",
@@ -228,7 +286,7 @@ class XHSClient:
             return False, str(exc), ("", "")
 
     async def get_note_info(
-        self, session: aiohttp.ClientSession, note_url: str
+        self, session: AsyncSession, note_url: str
     ) -> Tuple[bool, str, Dict[str, Any]]:
         url_parse = urllib.parse.urlparse(note_url)
         note_id = url_parse.path.split("/")[-1]
@@ -238,7 +296,7 @@ class XHSClient:
             if "=" not in kv:
                 continue
             key, value = kv.split("=", 1)
-            kv_dist[key] = value
+            kv_dist[key] = urllib.parse.unquote(value)
         xsec_token = kv_dist.get("xsec_token")
         xsec_source = kv_dist.get("xsec_source", "pc_search")
         if not xsec_token:
@@ -259,9 +317,11 @@ class XHSClient:
 
     @staticmethod
     def build_note_url(note_id: str, xsec_token: str, xsec_source: str = "pc_search") -> str:
+        safe_token = urllib.parse.quote(xsec_token or "", safe="")
+        safe_source = urllib.parse.quote(xsec_source or "", safe="")
         return (
             f"https://www.xiaohongshu.com/explore/{note_id}"
-            f"?xsec_token={xsec_token}&xsec_source={xsec_source}"
+            f"?xsec_token={safe_token}&xsec_source={safe_source}"
         )
 
     @staticmethod

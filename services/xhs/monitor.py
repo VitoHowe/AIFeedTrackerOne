@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 小红书博主监控服务
+使用 curl_cffi 模拟 Chrome 浏览器 TLS 指纹
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
 
 import aiofiles
-import aiohttp
+from curl_cffi.requests import AsyncSession
 
 from config import XHS_CONFIG, AI_CONFIG
 from ..ai_summary.summary_generator import SummaryGenerator
@@ -278,7 +279,7 @@ class XHSMonitorService:
             ]
 
     async def _resolve_user(
-        self, session: aiohttp.ClientSession, creator: XHSCreator
+        self, session: AsyncSession, creator: XHSCreator
     ) -> Optional[Dict[str, str]]:
         def _extract_profile_hint(raw: str) -> tuple[str, str, str]:
             if not raw:
@@ -390,7 +391,7 @@ class XHSMonitorService:
 
     async def _download_images(
         self,
-        session: aiohttp.ClientSession,
+        session: AsyncSession,
         creator: XHSCreator,
         note_id: str,
         image_urls: List[str],
@@ -400,11 +401,11 @@ class XHSMonitorService:
         os.makedirs(base_dir, exist_ok=True)
         for idx, url in enumerate(image_urls, 1):
             try:
-                async with session.get(url) as resp:
-                    if resp.status != 200:
-                        continue
-                    content = await resp.read()
-                    content_type = (resp.headers.get("Content-Type") or "").lower()
+                resp = await session.get(url, impersonate="chrome131")
+                if resp.status_code != 200:
+                    continue
+                content = resp.content
+                content_type = (resp.headers.get("Content-Type") or "").lower()
                 mime = "image/jpeg"
                 if "image/webp" in content_type or "webp" in url:
                     mime = "image/webp"
@@ -433,7 +434,7 @@ class XHSMonitorService:
         return False
 
     async def _fetch_note_detail_card(
-        self, session: aiohttp.ClientSession, note_id: str, note_url: str
+        self, session: AsyncSession, note_id: str, note_url: str
     ) -> Optional[Dict[str, Any]]:
         ok, msg, detail = await self.client.get_note_info(session, note_url)
         if not ok:
@@ -494,16 +495,16 @@ class XHSMonitorService:
         return items[0].get("note_card") or {}
 
     async def _fetch_images_base64(
-        self, session: aiohttp.ClientSession, image_urls: List[str]
+        self, session: AsyncSession, image_urls: List[str]
     ) -> List[Dict[str, str]]:
         results: List[Dict[str, str]] = []
         for url in image_urls:
             try:
-                async with session.get(url) as resp:
-                    if resp.status != 200:
-                        continue
-                    content = await resp.read()
-                    content_type = resp.headers.get("Content-Type", "image/jpeg")
+                resp = await session.get(url, impersonate="chrome131")
+                if resp.status_code != 200:
+                    continue
+                content = resp.content
+                content_type = resp.headers.get("Content-Type", "image/jpeg")
                 mime = content_type.split(";")[0] if content_type else "image/jpeg"
                 b64 = base64.b64encode(content).decode("utf-8")
                 results.append({"mime": mime, "base64": b64, "url": url})
@@ -643,7 +644,8 @@ class XHSMonitorService:
         if not self.summarizer:
             raise ValueError("AI summary service not initialized")
 
-        async with aiohttp.ClientSession() as session:
+        # 使用 curl_cffi 创建模拟 Chrome 131 浏览器的会话
+        async with AsyncSession(impersonate="chrome131") as session:
             user = await self._resolve_user(session, creator)
             if not user or not user.get("user_id"):
                 raise ValueError("user not found or missing user_id")
@@ -666,7 +668,7 @@ class XHSMonitorService:
                 if not note_id:
                     continue
                 note_token = self._get_note_xsec_token(note, xsec_token)
-                note_source = self._get_note_xsec_source(note, xsec_source or "pc_note")
+                note_source = self._get_note_xsec_source(note, "pc_note")
                 note_url = self.client.build_note_url(note_id, note_token, note_source)
                 note_card = note.get("note_card") or {}
                 note_time = self._extract_note_time_ms(note, note_card)
@@ -764,7 +766,7 @@ class XHSMonitorService:
             }
 
     async def process_creator(
-        self, session: aiohttp.ClientSession, creator: XHSCreator
+        self, session: AsyncSession, creator: XHSCreator
     ) -> None:
         if not self.cookie:
             return
@@ -806,7 +808,7 @@ class XHSMonitorService:
             note_time = self._extract_note_time_ms(note, note_card)
             if not note_time and idx < time_probe_limit:
                 note_token = self._get_note_xsec_token(note, xsec_token)
-                note_source = self._get_note_xsec_source(note, xsec_source or "pc_note")
+                note_source = self._get_note_xsec_source(note, "pc_note")
                 note_url = self.client.build_note_url(note_id, note_token, note_source)
                 detail_card = await self._fetch_note_detail_card(session, note_id, note_url)
                 if detail_card:
@@ -909,7 +911,7 @@ class XHSMonitorService:
 
     async def _process_today_note(
         self,
-        session: aiohttp.ClientSession,
+        session: AsyncSession,
         creator: XHSCreator,
         user: Dict[str, str],
         note: Dict[str, Any],
@@ -922,7 +924,7 @@ class XHSMonitorService:
             return False
 
         note_token = self._get_note_xsec_token(note, xsec_token)
-        note_source = self._get_note_xsec_source(note, xsec_source or "pc_note")
+        note_source = self._get_note_xsec_source(note, "pc_note")
         note_url = self.client.build_note_url(note_id, note_token, note_source)
         note_card = note.get("note_card") or {}
         note_time = self._extract_note_time_ms(note, note_card)
@@ -1019,7 +1021,7 @@ class XHSMonitorService:
         return True
 
     async def monitor_single_creator(
-        self, session: aiohttp.ClientSession, creator: XHSCreator
+        self, session: AsyncSession, creator: XHSCreator
     ) -> None:
         while True:
             try:
@@ -1050,7 +1052,9 @@ class XHSMonitorService:
             self.logger.warning("未配置小红书博主列表")
             return
 
-        async with aiohttp.ClientSession() as session:
+        # 使用 curl_cffi 创建模拟 Chrome 131 浏览器的会话
+        # 自动处理 TLS/JA3 指纹、HTTP/2、Brotli 压缩等
+        async with AsyncSession(impersonate="chrome131") as session:
             if once:
                 for creator in creators:
                     await self.process_creator(session, creator)

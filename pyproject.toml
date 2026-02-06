@@ -10,6 +10,7 @@ dependencies = [
     "aiologger>=0.7.0",
     "bilibili-api-python>=17.4.0",
     "brotli>=1.1.0",
+    "curl_cffi>=0.7.0",
     "fastapi>=0.111.0",
     "lark-oapi>=1.4.23",
     "openai>=2.3.0",
