@@ -6,14 +6,23 @@ from __future__ import annotations
 import inspect
 import logging
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from config import PANEL_CONFIG
-from .config_store import read_creators, read_env_values, update_env_values, write_creators
+from config import PANEL_CONFIG, reload_config
+from services.ai_summary import AISummaryService
+from services.xhs.monitor import XHSCreator, XHSMonitorService
+from .config_store import (
+    read_creators,
+    read_env_values,
+    update_env_values,
+    write_creators,
+    read_xhs_creators,
+    write_xhs_creators,
+)
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -34,6 +43,12 @@ ALLOWED_ENV_KEYS = [
     "AI_API_KEY",
     "AI_BASE_URL",
     "AI_MODEL",
+    "AI_MAX_TOKENS",
+    "XHS_COOKIE",
+    "XHS_PROMPT",
+    "XHS_TEXT_HINT_MAX_LEN",
+    "XHS_IMAGE_BATCH_SIZE",
+    "API_RETRY_DELAY",
     "USER_AGENT",
     "PANEL_HOST",
     "PANEL_ADMIN_TOKEN",
@@ -108,5 +123,56 @@ def create_app(on_change: Optional[Callable[[], object]] = None) -> FastAPI:
         write_creators(creators)
         await _notify_change(on_change)
         return {"status": "ok"}
+
+    @app.get("/api/xhs-creators")
+    async def get_xhs_creators(_: None = Depends(require_read)) -> List[dict]:
+        return read_xhs_creators()
+
+    @app.post("/api/xhs-creators")
+    async def update_xhs_creators(
+        creators: List[dict] = Body(...),
+        _: None = Depends(require_admin),
+    ) -> Dict[str, str]:
+        write_xhs_creators(creators)
+        await _notify_change(on_change)
+        return {"status": "ok"}
+
+    @app.post("/api/xhs-test")
+    async def test_xhs_prompt(
+        payload: Dict[str, Optional[str]] = Body(default_factory=dict),
+        _: None = Depends(require_admin),
+    ) -> Dict[str, Any]:
+        reload_config()
+
+        creators = read_xhs_creators()
+        if not creators:
+            raise HTTPException(status_code=400, detail="未配置小红书博主列表")
+
+        red_id = (payload or {}).get("red_id")
+        target = None
+        if red_id:
+            for item in creators:
+                if str(item.get("red_id")) == str(red_id):
+                    target = item
+                    break
+        if not target:
+            target = creators[0]
+
+        try:
+            summarizer = AISummaryService(feishu_bot=None)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        monitor = XHSMonitorService(feishu_bot=None, summarizer=summarizer)
+        creator = XHSCreator(
+            red_id=str(target.get("red_id")),
+            name=str(target.get("name") or target.get("red_id")),
+            check_interval=int(target.get("check_interval", 600)),
+        )
+
+        try:
+            return await monitor.test_latest_note(creator)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return app

@@ -95,12 +95,14 @@ class AIClient:
             )
 
             # 调用API
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            kwargs = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": temperature,
+            }
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+            response = await self.client.chat.completions.create(**kwargs)
 
             # 提取返回内容
             if response.choices and len(response.choices) > 0:

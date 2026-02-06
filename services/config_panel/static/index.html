@@ -158,6 +158,7 @@
             <div class="actions">
               <button class="secondary" id="reload-config">刷新配置</button>
               <button class="secondary" id="reload-creators">刷新博主</button>
+              <button class="secondary" id="reload-xhs-creators">刷新小红书</button>
             </div>
           </div>
         </div>
@@ -201,6 +202,30 @@
           <div>
             <label>AI Model</label>
             <input data-env-key="AI_MODEL" placeholder="AI_MODEL" />
+          </div>
+          <div>
+            <label>AI Max Tokens</label>
+            <input data-env-key="AI_MAX_TOKENS" placeholder="留空或 0 表示不限制" />
+          </div>
+          <div>
+            <label>XHS Cookie</label>
+            <textarea data-env-key="XHS_COOKIE" placeholder="XHS_COOKIE"></textarea>
+          </div>
+          <div>
+            <label>小红书图片分析提示词</label>
+            <textarea data-env-key="XHS_PROMPT" placeholder="XHS_PROMPT"></textarea>
+          </div>
+          <div>
+            <label>XHS 文本截断上限</label>
+            <input data-env-key="XHS_TEXT_HINT_MAX_LEN" placeholder="800" />
+          </div>
+          <div>
+            <label>XHS 单次图片上限</label>
+            <input data-env-key="XHS_IMAGE_BATCH_SIZE" placeholder="5" />
+          </div>
+          <div>
+            <label>API 失败重试延迟（秒）</label>
+            <input data-env-key="API_RETRY_DELAY" placeholder="30" />
           </div>
           <div>
             <label>User-Agent</label>
@@ -259,13 +284,27 @@
       </section>
 
       <section class="card">
-        <h2>监控博主列表</h2>
+        <h2>B 站博主列表</h2>
         <label for="creators">JSON 数组</label>
         <textarea id="creators" spellcheck="false"></textarea>
         <div class="actions">
-          <button id="save-creators">保存博主列表</button>
+          <button id="save-creators">保存 B 站博主列表</button>
         </div>
         <div class="status" id="creators-status"></div>
+      </section>
+
+      <section class="card">
+        <h2>小红书博主列表</h2>
+        <label for="xhs-creators">JSON 数组</label>
+        <textarea id="xhs-creators" spellcheck="false"></textarea>
+        <div class="actions">
+          <select id="xhs-test-select"></select>
+          <button id="save-xhs-creators">保存小红书博主列表</button>
+          <button class="secondary" id="test-xhs-prompt">测试小红书 Prompt</button>
+        </div>
+        <div class="status" id="xhs-creators-status"></div>
+        <div class="status" id="xhs-test-status"></div>
+        <textarea id="xhs-test-result" readonly spellcheck="false"></textarea>
       </section>
     </main>
 
@@ -275,6 +314,11 @@
       const configStatus = document.getElementById("config-status");
       const creatorsStatus = document.getElementById("creators-status");
       const creatorsField = document.getElementById("creators");
+      const xhsCreatorsStatus = document.getElementById("xhs-creators-status");
+      const xhsCreatorsField = document.getElementById("xhs-creators");
+      const xhsTestStatus = document.getElementById("xhs-test-status");
+      const xhsTestResult = document.getElementById("xhs-test-result");
+      const xhsTestSelect = document.getElementById("xhs-test-select");
 
       const envInputs = Array.from(document.querySelectorAll("[data-env-key]"));
 
@@ -343,6 +387,21 @@
         }
       };
 
+      const loadXhsCreators = async () => {
+        try {
+          const res = await fetch("/api/xhs-creators", { headers: headers() });
+          if (!res.ok) {
+            throw new Error(`小红书列表加载失败：${res.status}`);
+          }
+          const data = await res.json();
+          xhsCreatorsField.value = JSON.stringify(data, null, 2);
+          renderXhsSelect(data);
+          setStatus(xhsCreatorsStatus, "小红书列表已加载", "ok");
+        } catch (err) {
+          setStatus(xhsCreatorsStatus, err.message, "error");
+        }
+      };
+
       const saveCreators = async () => {
         try {
           const payload = JSON.parse(creatorsField.value || "[]");
@@ -360,13 +419,98 @@
         }
       };
 
+      const saveXhsCreators = async () => {
+        try {
+          const payload = JSON.parse(xhsCreatorsField.value || "[]");
+          const res = await fetch("/api/xhs-creators", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...headers() },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            throw new Error(`小红书列表保存失败：${res.status}`);
+          }
+          renderXhsSelect(payload);
+          setStatus(xhsCreatorsStatus, "小红书列表已保存", "ok");
+        } catch (err) {
+          setStatus(xhsCreatorsStatus, err.message, "error");
+        }
+      };
+
+      const renderXhsSelect = (creators) => {
+        xhsTestSelect.innerHTML = "";
+        if (!Array.isArray(creators) || creators.length === 0) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "未配置";
+          xhsTestSelect.appendChild(option);
+          return;
+        }
+        creators.forEach((creator) => {
+          const option = document.createElement("option");
+          option.value = creator.red_id || "";
+          const name = creator.name || creator.red_id || "未知";
+          option.textContent = `${name} (${creator.red_id || "-"})`;
+          xhsTestSelect.appendChild(option);
+        });
+      };
+
+      const testXhsPrompt = async () => {
+        try {
+          const payload = {};
+          const selected = xhsTestSelect.value;
+          if (selected) {
+            payload.red_id = selected;
+          }
+
+          setStatus(xhsTestStatus, "正在测试，请稍候...", "ok");
+          xhsTestResult.value = "";
+
+          const res = await fetch("/api/xhs-test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...headers() },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            const detail = await res.json();
+            throw new Error(detail.detail || `测试失败：${res.status}`);
+          }
+          const data = await res.json();
+          const lines = [];
+          lines.push(`博主: ${data.creator?.name || ""} (${data.creator?.red_id || ""})`);
+          lines.push(`笔记: ${data.note?.title || ""}`);
+          lines.push(`链接: ${data.note?.note_url || ""}`);
+          lines.push(`时间: ${data.note?.publish_time || ""}`);
+          if (data.note?.image_urls?.length) {
+            lines.push(`图片: ${data.note.image_urls.join(", ")}`);
+          }
+          if (data.summary) {
+            lines.push("\nAI 总结:\n" + data.summary);
+          }
+          xhsTestResult.value = lines.join("\n");
+          setStatus(xhsTestStatus, "测试完成", "ok");
+        } catch (err) {
+          setStatus(xhsTestStatus, err.message, "error");
+        }
+      };
+
       document.getElementById("reload-config").addEventListener("click", loadConfig);
       document.getElementById("reload-creators").addEventListener("click", loadCreators);
+      document
+        .getElementById("reload-xhs-creators")
+        .addEventListener("click", loadXhsCreators);
       document.getElementById("save-config").addEventListener("click", saveConfig);
       document.getElementById("save-creators").addEventListener("click", saveCreators);
+      document
+        .getElementById("save-xhs-creators")
+        .addEventListener("click", saveXhsCreators);
+      document
+        .getElementById("test-xhs-prompt")
+        .addEventListener("click", testXhsPrompt);
 
       loadConfig();
       loadCreators();
+      loadXhsCreators();
     </script>
   </body>
 </html>

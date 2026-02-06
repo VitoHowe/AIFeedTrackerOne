@@ -30,6 +30,7 @@ BILI_VIDEO_API = "https://api.bilibili.com/x/web-interface/view"
 FEISHU_CONFIG: Dict[str, Optional[str]] = {}
 BILIBILI_CONFIG: Dict[str, Optional[str]] = {}
 AI_CONFIG: Dict[str, Optional[str]] = {}
+XHS_CONFIG: Dict[str, Optional[str]] = {}
 PANEL_CONFIG: Dict[str, Optional[str]] = {}
 ANTI_BAN_CONFIG: Dict[str, object] = {}
 USER_AGENT = ""
@@ -41,6 +42,22 @@ def _get_int_env(name: str, default: int) -> int:
         return int(os.getenv(name, str(default)))
     except (TypeError, ValueError):
         return default
+
+
+def _get_optional_int_env(name: str) -> Optional[int]:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    value = value.strip()
+    if value == "":
+        return None
+    try:
+        parsed = int(value)
+        if parsed <= 0:
+            return None
+        return parsed
+    except (TypeError, ValueError):
+        return None
 
 
 def _load_env() -> None:
@@ -90,6 +107,17 @@ def reload_config() -> None:
             "api_key": os.getenv("AI_API_KEY"),
             "base_url": os.getenv("AI_BASE_URL"),
             "model": os.getenv("AI_MODEL"),
+            "max_tokens": _get_optional_int_env("AI_MAX_TOKENS"),
+        }
+    )
+
+    XHS_CONFIG.clear()
+    XHS_CONFIG.update(
+        {
+            "cookie": _strip_wrapping_quotes(os.getenv("XHS_COOKIE")),
+            "prompt": os.getenv("XHS_PROMPT"),
+            "text_hint_max_len": _get_int_env("XHS_TEXT_HINT_MAX_LEN", 800),
+            "image_batch_size": _get_int_env("XHS_IMAGE_BATCH_SIZE", 5),
         }
     )
 
@@ -115,6 +143,7 @@ def reload_config() -> None:
             "user_agent": USER_AGENT,
             "request_delay": (1, 3),
             "timeout": 30,
+            "api_retry_delay": _get_int_env("API_RETRY_DELAY", 30),
         }
     )
 
@@ -136,6 +165,7 @@ def get_config_status() -> dict:
             FEISHU_CONFIG["app_id"] and FEISHU_CONFIG["app_secret"]
         ),
         "bilibili_configured": bool(BILIBILI_CONFIG["SESSDATA"]),
+        "xhs_configured": bool(XHS_CONFIG.get("cookie")),
         "cookie_available": bool(build_bilibili_cookie()),
     }
 

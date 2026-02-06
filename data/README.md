@@ -102,3 +102,31 @@ cp data/bilibili_creators.json.example data/bilibili_creators.json
 # 运行一次检查（测试配置是否正确）
 uv run python main.py --mode monitor --once
 ```
+
+### xhs_creators.json（必需）
+
+存储需要监控的小红书博主列表（使用 red_id）。
+
+**首次使用**：复制示例文件并修改
+
+```bash
+cp data/xhs_creators.json.example data/xhs_creators.json
+```
+
+**文件结构**：
+
+```json
+[
+  {
+    "red_id": "579739786",
+    "name": "博主名称",
+    "platform": "xhs",
+    "check_interval": 600
+  }
+]
+```
+
+**如何获取 red_id**：
+
+1. 进入博主主页，主页展示的小红书号即 red_id
+2. 也可以在搜索框中输入小红书号进行确认

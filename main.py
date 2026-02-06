@@ -8,6 +8,7 @@ AI视频机器人主程序
 import asyncio
 import logging
 import sys
+import socket
 from pathlib import Path
 from typing import Optional
 
@@ -19,7 +20,7 @@ from config import PANEL_CONFIG, build_bilibili_cookie, get_config_status, reloa
 
 # 导入核心模块
 from core import configure_logging
-from services import FeishuBot, MonitorService
+from services import FeishuBot, MonitorService, XHSMonitorService
 
 # 导入服务模块
 from services.ai_summary import AISummaryService
@@ -49,14 +50,34 @@ async def start_config_panel(on_change=None):
     except ImportError:
         raise RuntimeError("缺少 uvicorn 依赖，请先安装后再启动配置面板")
 
+    host = PANEL_CONFIG.get("host", "127.0.0.1")
+    port = PANEL_CONFIG.get("port", 8765)
+    check_host = "127.0.0.1" if host in ("0.0.0.0", "localhost") else host
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            if sock.connect_ex((check_host, port)) == 0:
+                logger = logging.getLogger(__name__)
+                logger.warning("配置面板端口已占用，跳过启动: %s:%s", host, port)
+                return
+    except Exception:
+        pass
+
     config = uvicorn.Config(
         create_app(on_change=on_change),
-        host=PANEL_CONFIG.get("host", "127.0.0.1"),
-        port=PANEL_CONFIG.get("port", 8765),
+        host=host,
+        port=port,
         log_level="info",
     )
     server = uvicorn.Server(config)
-    await server.serve()
+    try:
+        await server.serve()
+    except OSError as exc:
+        logger = logging.getLogger(__name__)
+        logger.warning("????????: %s", exc)
+    except SystemExit as exc:
+        logger = logging.getLogger(__name__)
+        logger.warning("????????: %s", exc)
 
 
 class AIVideoBot:
@@ -175,19 +196,34 @@ class AIVideoBot:
             monitor_service = MonitorService(
                 feishu_bot=self.feishu_bot, summarizer=self.ai_service, cookie=cookie
             )
+            xhs_monitor = XHSMonitorService(
+                feishu_bot=self.feishu_bot, summarizer=self.ai_service
+            )
 
             # 加载创作者列表
             creators = monitor_service.load_creators_from_file()
-            self.logger.info(f"加载了 {len(creators)} 个创作者")
+            xhs_creators = xhs_monitor.load_creators_from_file()
+            self.logger.info(
+                f"加载了 {len(creators)} 个创作者 + {len(xhs_creators)} 个小红书博主"
+            )
 
             # 发送监控启动通知
             try:
-                creator_names = ", ".join([c.name for c in creators[:3]])
+                bili_names = ", ".join([c.name for c in creators[:3]])
                 if len(creators) > 3:
-                    creator_names += f" 等{len(creators)}个创作者"
+                    bili_names += f" 等{len(creators)}个创作者"
+                if not bili_names:
+                    bili_names = "无"
 
-                content = f"监控服务已启动\n\n"
-                content += f"**监控对象:** {creator_names}\n"
+                xhs_names = ", ".join([c.name for c in xhs_creators[:3]])
+                if len(xhs_creators) > 3:
+                    xhs_names += f" 等{len(xhs_creators)}个博主"
+                if not xhs_names:
+                    xhs_names = "无"
+
+                content = "监控服务已启动\n\n"
+                content += f"**B站:** {bili_names}\n"
+                content += f"**小红书:** {xhs_names}\n"
                 content += f"**模式:** {'单次检查' if once else '持续监控'}"
 
                 await self.feishu_bot.send_system_notification(
@@ -197,7 +233,15 @@ class AIVideoBot:
                 self.logger.warning(f"发送监控启动通知失败: {e}")
 
             # 启动监控
-            await monitor_service.start_monitoring(creators, once=once)
+            tasks = [
+                asyncio.create_task(
+                    monitor_service.start_monitoring(creators, once=once)
+                ),
+                asyncio.create_task(
+                    xhs_monitor.start_monitoring(xhs_creators, once=once)
+                ),
+            ]
+            await asyncio.gather(*tasks)
 
         except asyncio.CancelledError:
             self.logger.info("监控任务已取消")
