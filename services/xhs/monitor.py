@@ -130,8 +130,23 @@ class XHSMonitorService:
         self.client = XHSClient(self.cookie or "")
 
     @staticmethod
-    def _is_today(timestamp_ms: int) -> bool:
+    def _normalize_timestamp_ms(value: Any) -> int:
         try:
+            ts = int(value)
+        except (TypeError, ValueError):
+            return 0
+        if ts <= 0:
+            return 0
+        # 秒级时间戳转换为毫秒
+        if ts < 10_000_000_000:
+            return ts * 1000
+        return ts
+
+    @classmethod
+    def _is_today(cls, timestamp_ms: int) -> bool:
+        try:
+            if not timestamp_ms:
+                return False
             note_date = datetime.fromtimestamp(timestamp_ms / 1000).date()
             return note_date == date.today()
         except Exception:
@@ -531,12 +546,24 @@ class XHSMonitorService:
                     note_id, note.get("xsec_token") or xsec_token, xsec_source
                 )
                 note_card = note.get("note_card") or {}
-                note_time = note_card.get("time") or note.get("time") or 0
+                raw_note_time = note_card.get("time") or note.get("time") or 0
+                note_time = self._normalize_timestamp_ms(raw_note_time)
                 note_type = note_card.get("type") or note.get("type")
                 image_urls: List[str] = []
 
                 if self._has_full_image_list(note):
                     image_urls = self.client.extract_image_urls_from_note(note)
+                    if image_urls and all(self._is_preview_url(url) for url in image_urls):
+                        detail_card = await self._fetch_note_detail_card(
+                            session, note_id, note_url
+                        )
+                        if not detail_card:
+                            continue
+                        note_card = detail_card
+                        raw_note_time = note_card.get("time") or raw_note_time
+                        note_time = self._normalize_timestamp_ms(raw_note_time)
+                        note_type = note_card.get("type") or note_type
+                        image_urls = self.client.extract_image_urls(note_card)
                 else:
                     detail_card = await self._fetch_note_detail_card(
                         session, note_id, note_url
@@ -544,7 +571,8 @@ class XHSMonitorService:
                     if not detail_card:
                         continue
                     note_card = detail_card
-                    note_time = note_card.get("time") or note_time
+                    raw_note_time = note_card.get("time") or raw_note_time
+                    note_time = self._normalize_timestamp_ms(raw_note_time)
                     note_type = note_card.get("type") or note_type
                     image_urls = self.client.extract_image_urls(note_card)
 
@@ -593,7 +621,7 @@ class XHSMonitorService:
                 images, text_hint=text_hint
             )
 
-            note_time = note_card.get("time") or 0
+            note_time = self._normalize_timestamp_ms(note_card.get("time") or 0)
             publish_time = (
                 datetime.fromtimestamp(note_time / 1000).strftime("%Y-%m-%d %H:%M:%S")
                 if note_time
@@ -654,14 +682,39 @@ class XHSMonitorService:
             if not note_id:
                 continue
             note_card = note.get("note_card") or {}
-            note_time = note_card.get("time") or note.get("time") or 0
+            raw_note_time = note_card.get("time") or note.get("time") or 0
+            note_time = self._normalize_timestamp_ms(raw_note_time)
             if note_time and self._is_today(note_time):
                 today_note_ids.append(note_id)
                 today_notes.append(note)
                 note_time_map[note_id] = int(note_time)
 
         if not today_note_ids:
-            self.logger.info("今日无新笔记: %s", creator.name)
+            if notes:
+                times = [
+                    self._normalize_timestamp_ms(
+                        (n.get("note_card") or {}).get("time") or n.get("time") or 0
+                    )
+                    for n in notes
+                ]
+                times = [t for t in times if t]
+                if times:
+                    min_time = datetime.fromtimestamp(min(times) / 1000).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    max_time = datetime.fromtimestamp(max(times) / 1000).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    self.logger.info(
+                        "今日无新笔记: %s（笔记时间范围 %s ~ %s）",
+                        creator.name,
+                        min_time,
+                        max_time,
+                    )
+                else:
+                    self.logger.info("今日无新笔记: %s（无可用时间戳）", creator.name)
+            else:
+                self.logger.info("今日无新笔记: %s", creator.name)
             return
 
         seen_today = self.state.get_daily_seen(creator.red_id, today_key)
@@ -746,7 +799,8 @@ class XHSMonitorService:
             note_id, note.get("xsec_token") or xsec_token, xsec_source
         )
         note_card = note.get("note_card") or {}
-        note_time = note_card.get("time") or note.get("time")
+        raw_note_time = note_card.get("time") or note.get("time") or 0
+        note_time = self._normalize_timestamp_ms(raw_note_time)
         note_type = note_card.get("type") or note.get("type")
         image_urls: List[str] = []
 
@@ -758,7 +812,8 @@ class XHSMonitorService:
                 )
                 if detail_card:
                     note_card = detail_card
-                    note_time = note_card.get("time") or note_time
+                    raw_note_time = note_card.get("time") or raw_note_time
+                    note_time = self._normalize_timestamp_ms(raw_note_time)
                     note_type = note_card.get("type") or note_type
                     image_urls = self.client.extract_image_urls(note_card)
         else:
@@ -767,7 +822,8 @@ class XHSMonitorService:
             )
             if detail_card:
                 note_card = detail_card
-                note_time = note_card.get("time") or note_time
+                raw_note_time = note_card.get("time") or raw_note_time
+                note_time = self._normalize_timestamp_ms(raw_note_time)
                 note_type = note_card.get("type") or note_type
                 image_urls = self.client.extract_image_urls(note_card)
 
@@ -806,6 +862,7 @@ class XHSMonitorService:
             images, text_hint=text_hint
         )
 
+        note_time = self._normalize_timestamp_ms(raw_note_time)
         publish_time = (
             datetime.fromtimestamp(note_time / 1000).strftime("%Y-%m-%d %H:%M:%S")
             if note_time
