@@ -210,13 +210,28 @@ class XHSClient:
         cookies = parse_cookies(self.cookies_str)
         
         resp = await session.get(
-            url, 
-            headers=headers, 
-            cookies=cookies, 
+            url,
+            headers=headers,
+            cookies=cookies,
             timeout=self.timeout,
             impersonate=self.BROWSER_IMPERSONATE
         )
-        return resp.text
+        
+        # 调试日志：记录响应状态和内容长度
+        html = resp.text
+        self.logger.debug(
+            "获取用户主页: user_id=%s, status=%s, html_len=%d",
+            user_id, resp.status_code, len(html)
+        )
+        
+        # 如果 HTML 太短或包含验证页面特征，记录警告
+        if len(html) < 1000 or "验证" in html or "captcha" in html.lower():
+            self.logger.warning(
+                "用户主页可能被拦截: user_id=%s, status=%s, html_preview=%s",
+                user_id, resp.status_code, html[:200]
+            )
+        
+        return html
 
     async def fetch_note_page(
         self,
@@ -235,13 +250,28 @@ class XHSClient:
         cookies = parse_cookies(self.cookies_str)
         
         resp = await session.get(
-            url, 
-            headers=headers, 
-            cookies=cookies, 
+            url,
+            headers=headers,
+            cookies=cookies,
             timeout=self.timeout,
             impersonate=self.BROWSER_IMPERSONATE
         )
-        return resp.text
+        
+        # 调试日志：记录响应状态和内容长度
+        html = resp.text
+        self.logger.debug(
+            "获取笔记页面: note_id=%s, status=%s, html_len=%d, url=%s",
+            note_id, resp.status_code, len(html), url
+        )
+        
+        # 如果 HTML 太短或包含验证页面特征，记录警告
+        if len(html) < 1000 or "验证" in html or "captcha" in html.lower():
+            self.logger.warning(
+                "笔记页面可能被拦截: note_id=%s, status=%s, html_preview=%s",
+                note_id, resp.status_code, html[:200]
+            )
+        
+        return html
 
     @staticmethod
     def extract_xsec_from_html(html: str) -> Tuple[str, str]:
