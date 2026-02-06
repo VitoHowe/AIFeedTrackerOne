@@ -442,11 +442,11 @@ class XHSMonitorService:
                 "获取笔记详情失败: %s, msg=%s, code=%s", note_id, msg, code
             )
             ok2, msg2, token_data = await self.client.get_note_xsec_token(
-                session, note_id
+                session, note_id, xsec_source="pc_note"
             )
             if ok2:
                 token, source = token_data
-                retry_url = self.client.build_note_url(note_id, token, source or "pc_search")
+                retry_url = self.client.build_note_url(note_id, token, source or "pc_note")
                 ok, msg, detail = await self.client.get_note_info(session, retry_url)
                 if not ok:
                     code = detail.get("code") if isinstance(detail, dict) else None
@@ -464,7 +464,32 @@ class XHSMonitorService:
                 return None
         items = detail.get("data", {}).get("items", [])
         if not items:
-            self.logger.warning("笔记详情为空: %s", note_id)
+            self.logger.warning(
+                "笔记详情为空: %s, code=%s, msg=%s",
+                note_id,
+                detail.get("code") if isinstance(detail, dict) else None,
+                detail.get("msg") if isinstance(detail, dict) else None,
+            )
+            ok2, msg2, token_data = await self.client.get_note_xsec_token(
+                session, note_id, xsec_source="pc_note"
+            )
+            if ok2:
+                token, source = token_data
+                retry_url = self.client.build_note_url(note_id, token, source or "pc_note")
+                ok, msg, detail = await self.client.get_note_info(session, retry_url)
+                if ok:
+                    items = detail.get("data", {}).get("items", [])
+                    if items:
+                        return items[0].get("note_card") or {}
+                self.logger.warning(
+                    "重试获取笔记详情为空: %s, msg=%s",
+                    note_id,
+                    msg,
+                )
+            else:
+                self.logger.warning(
+                    "获取笔记页面 xsec_token 失败: %s, msg=%s", note_id, msg2
+                )
             return None
         return items[0].get("note_card") or {}
 
@@ -535,6 +560,14 @@ class XHSMonitorService:
             "mw_1",
         )
         return any(marker in url for marker in markers)
+
+    @staticmethod
+    def _get_note_xsec_token(note: Dict[str, Any], fallback: str = "") -> str:
+        return note.get("xsec_token") or note.get("xsecToken") or fallback
+
+    @staticmethod
+    def _get_note_xsec_source(note: Dict[str, Any], fallback: str = "pc_note") -> str:
+        return note.get("xsec_source") or note.get("xsecSource") or fallback
 
     async def _summarize_images(
         self, images: List[Dict[str, str]], text_hint: str = ""
@@ -632,9 +665,9 @@ class XHSMonitorService:
                 note_id = note.get("note_id")
                 if not note_id:
                     continue
-                note_url = self.client.build_note_url(
-                    note_id, note.get("xsec_token") or xsec_token, xsec_source
-                )
+                note_token = self._get_note_xsec_token(note, xsec_token)
+                note_source = self._get_note_xsec_source(note, xsec_source or "pc_note")
+                note_url = self.client.build_note_url(note_id, note_token, note_source)
                 note_card = note.get("note_card") or {}
                 note_time = self._extract_note_time_ms(note, note_card)
                 note_type = note_card.get("type") or note.get("type")
@@ -772,9 +805,9 @@ class XHSMonitorService:
             note_card = note.get("note_card") or {}
             note_time = self._extract_note_time_ms(note, note_card)
             if not note_time and idx < time_probe_limit:
-                note_url = self.client.build_note_url(
-                    note_id, note.get("xsec_token") or xsec_token, xsec_source
-                )
+                note_token = self._get_note_xsec_token(note, xsec_token)
+                note_source = self._get_note_xsec_source(note, xsec_source or "pc_note")
+                note_url = self.client.build_note_url(note_id, note_token, note_source)
                 detail_card = await self._fetch_note_detail_card(session, note_id, note_url)
                 if detail_card:
                     note["_detail_card"] = detail_card
@@ -888,9 +921,9 @@ class XHSMonitorService:
         if not note_id:
             return False
 
-        note_url = self.client.build_note_url(
-            note_id, note.get("xsec_token") or xsec_token, xsec_source
-        )
+        note_token = self._get_note_xsec_token(note, xsec_token)
+        note_source = self._get_note_xsec_source(note, xsec_source or "pc_note")
+        note_url = self.client.build_note_url(note_id, note_token, note_source)
         note_card = note.get("note_card") or {}
         note_time = self._extract_note_time_ms(note, note_card)
         note_type = note_card.get("type") or note.get("type")
