@@ -677,37 +677,27 @@ class XHSMonitorService:
         today_notes: List[Dict[str, Any]] = []
         note_time_map: Dict[str, int] = {}
 
-        for note in notes:
+        time_probe_limit = 10
+        for idx, note in enumerate(notes):
             note_id = note.get("note_id")
             if not note_id:
                 continue
             note_card = note.get("note_card") or {}
             raw_note_time = note_card.get("time") or note.get("time") or 0
             note_time = self._normalize_timestamp_ms(raw_note_time)
+            if not note_time and idx < time_probe_limit:
+                note_url = self.client.build_note_url(
+                    note_id, note.get("xsec_token") or xsec_token, xsec_source
+                )
+                detail_card = await self._fetch_note_detail_card(session, note_id, note_url)
+                if detail_card:
+                    note["_detail_card"] = detail_card
+                    raw_note_time = detail_card.get("time") or 0
+                    note_time = self._normalize_timestamp_ms(raw_note_time)
             if note_time and self._is_today(note_time):
                 today_note_ids.append(note_id)
                 today_notes.append(note)
                 note_time_map[note_id] = int(note_time)
-
-        if not today_note_ids:
-            # 若列表中完全没有时间戳，改用列表顺序作为“今日候选”
-            if notes:
-                fallback_ids: List[str] = []
-                fallback_notes: List[Dict[str, Any]] = []
-                total = len(notes)
-                for idx, note in enumerate(notes):
-                    note_id = note.get("note_id")
-                    if not note_id:
-                        continue
-                    fallback_ids.append(note_id)
-                    fallback_notes.append(note)
-                    if note_id not in note_time_map:
-                        # 使用列表顺序生成一个可排序的伪时间
-                        note_time_map[note_id] = total - idx
-                if fallback_ids:
-                    self.logger.info("笔记时间戳缺失，使用列表顺序作为今日候选: %s", creator.name)
-                    today_note_ids = fallback_ids
-                    today_notes = fallback_notes
 
         if not today_note_ids:
             if notes:
@@ -732,7 +722,7 @@ class XHSMonitorService:
                         max_time,
                     )
                 else:
-                    self.logger.info("今日无新笔记: %s（无可用时间戳）", creator.name)
+                    self.logger.info("今日无新笔记: %s（无可用时间戳，已尝试补抓详情）", creator.name)
             else:
                 self.logger.info("今日无新笔记: %s", creator.name)
             return
@@ -824,9 +814,27 @@ class XHSMonitorService:
         note_type = note_card.get("type") or note.get("type")
         image_urls: List[str] = []
 
-        if self._has_full_image_list(note):
-            image_urls = self.client.extract_image_urls_from_note(note)
-            if image_urls and all(self._is_preview_url(url) for url in image_urls):
+        detail_card = note.get("_detail_card")
+        if detail_card:
+            note_card = detail_card
+            raw_note_time = note_card.get("time") or raw_note_time
+            note_time = self._normalize_timestamp_ms(raw_note_time)
+            note_type = note_card.get("type") or note_type
+            image_urls = self.client.extract_image_urls(note_card)
+        else:
+            if self._has_full_image_list(note):
+                image_urls = self.client.extract_image_urls_from_note(note)
+                if image_urls and all(self._is_preview_url(url) for url in image_urls):
+                    detail_card = await self._fetch_note_detail_card(
+                        session, note_id, note_url
+                    )
+                    if detail_card:
+                        note_card = detail_card
+                        raw_note_time = note_card.get("time") or raw_note_time
+                        note_time = self._normalize_timestamp_ms(raw_note_time)
+                        note_type = note_card.get("type") or note_type
+                        image_urls = self.client.extract_image_urls(note_card)
+            else:
                 detail_card = await self._fetch_note_detail_card(
                     session, note_id, note_url
                 )
@@ -836,16 +844,6 @@ class XHSMonitorService:
                     note_time = self._normalize_timestamp_ms(raw_note_time)
                     note_type = note_card.get("type") or note_type
                     image_urls = self.client.extract_image_urls(note_card)
-        else:
-            detail_card = await self._fetch_note_detail_card(
-                session, note_id, note_url
-            )
-            if detail_card:
-                note_card = detail_card
-                raw_note_time = note_card.get("time") or raw_note_time
-                note_time = self._normalize_timestamp_ms(raw_note_time)
-                note_type = note_card.get("type") or note_type
-                image_urls = self.client.extract_image_urls(note_card)
 
         if note_type and note_type != "normal":
             self.state.add_daily_seen(creator.red_id, today_key, note_id)
