@@ -690,6 +690,26 @@ class XHSMonitorService:
                 note_time_map[note_id] = int(note_time)
 
         if not today_note_ids:
+            # 若列表中完全没有时间戳，改用列表顺序作为“今日候选”
+            if notes:
+                fallback_ids: List[str] = []
+                fallback_notes: List[Dict[str, Any]] = []
+                total = len(notes)
+                for idx, note in enumerate(notes):
+                    note_id = note.get("note_id")
+                    if not note_id:
+                        continue
+                    fallback_ids.append(note_id)
+                    fallback_notes.append(note)
+                    if note_id not in note_time_map:
+                        # 使用列表顺序生成一个可排序的伪时间
+                        note_time_map[note_id] = total - idx
+                if fallback_ids:
+                    self.logger.info("笔记时间戳缺失，使用列表顺序作为今日候选: %s", creator.name)
+                    today_note_ids = fallback_ids
+                    today_notes = fallback_notes
+
+        if not today_note_ids:
             if notes:
                 times = [
                     self._normalize_timestamp_ms(
